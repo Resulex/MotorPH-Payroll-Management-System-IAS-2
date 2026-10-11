@@ -199,13 +199,15 @@ public class EmployeeDaoTest {
         System.out.println("Test for Load Leave Credits - Success");
         List<Map<String, Object>> leaveCredits = employeeDao.loadLeaveCredits(10001);
 
+        // Available credits are computed for the CURRENT year. The seed data has
+        // no leave records in 2026, so employee 10001 still has full credits.
         for (Map<String, Object> leave : leaveCredits) {
             if(leave.get("Type").equals("Emergency Leave")){
                 assertEquals(5, leave.get("Available"));
             } else if(leave.get("Type").equals("Sick Leave")){
                 assertEquals(15, leave.get("Available"));
             } else {
-                assertEquals(14, leave.get("Available"));
+                assertEquals(20, leave.get("Available"));
             }
             
             System.out.println("Unused " + leave.get("Type") + ": " + leave.get("Available"));

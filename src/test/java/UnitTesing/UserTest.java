@@ -3,6 +3,8 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
 package UnitTesing;
+import models.Address;
+import models.Benefits;
 import models.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,5 +86,68 @@ class UserTest {
     @Test
     void testSetAndGetPagibigNumber() {
         assertEquals("1234-5678-9012", user.getPagibigNumber());
+    }
+
+    @Test
+    void testSetAndGetStatus() {
+        user.setStatus("Active");
+        assertEquals("Active", user.getStatus());
+    }
+
+    @Test
+    void testSetAndGetImmediateSupervisor() {
+        user.setImmediateSupervisor(10005);
+        assertEquals(10005, user.getImmediateSupervisor());
+    }
+
+    @Test
+    void testSetAndGetDateHired() {
+        Date hired = new Date();
+        user.setDateHired(hired);
+        assertEquals(hired, user.getDateHired());
+    }
+
+    @Test
+    void testSetAndGetDepartment() {
+        user.setDepartment("Engineering");
+        assertEquals("Engineering", user.getDepartment());
+    }
+
+    @Test
+    void testSetAndGetAddress() {
+        Address address = new Address("1 Rizal St", "Bgy 1", "Manila", "NCR", "1000");
+        user.setAddress(address);
+        assertEquals(address, user.getAddress());
+    }
+
+    @Test
+    void testBenefitsAccessors() {
+        user.setBenefits(new Benefits(30000, 15000, 200, 2000, 1000, 500));
+        assertEquals(30000, user.getBenefitsBasicSalary(), 0.01);
+        assertEquals(15000, user.getBenefitsGrossSemiMonthlyRate(), 0.01);
+        assertEquals(200, user.getBenefitsHourlyRate(), 0.01);
+        assertEquals(2000, user.getBenefitsRiceSubsidy(), 0.01);
+        assertEquals(1000, user.getBenefitsPhoneAllowance(), 0.01);
+        assertEquals(500, user.getBenefitsClothingAllowance(), 0.01);
+
+        user.setBenefitsBasicSalary(31000);
+        user.setBenefitsGrossSemiMonthlyRate(15500);
+        user.setBenefitsHourlyRate(210);
+        user.setBenefitsRiceSubsidy(2100);
+        user.setBenefitsPhoneAllowance(1100);
+        user.setBenefitsClothingAllowance(600);
+
+        assertEquals(31000, user.getBenefitsBasicSalary(), 0.01);
+        assertEquals(15500, user.getBenefitsGrossSemiMonthlyRate(), 0.01);
+        assertEquals(210, user.getBenefitsHourlyRate(), 0.01);
+        assertEquals(2100, user.getBenefitsRiceSubsidy(), 0.01);
+        assertEquals(1100, user.getBenefitsPhoneAllowance(), 0.01);
+        assertEquals(600, user.getBenefitsClothingAllowance(), 0.01);
+    }
+
+    @Test
+    void testCalculateTotalBenefits() {
+        user.setBenefits(new Benefits(30000, 15000, 200, 2000, 1000, 500));
+        assertEquals(3500, user.calculateTotalBenefits(), 0.01);
     }
 }

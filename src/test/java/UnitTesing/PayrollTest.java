@@ -6,6 +6,7 @@ package UnitTesing;
 
 import models.Employee;
 import models.Benefits;
+import models.Deductions;
 import models.Payroll;
 import alex.oopmotorphpayrollsystem.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,6 +82,41 @@ public class PayrollTest {
                 + mockEmployee.calculateTotalBenefits()
                 - payroll.getDeductions().calculateTotalDeductions();
         assertEquals(expectedNetPay, payroll.getNetPay(), 0.1);
+    }
+
+    @Test
+    void testPayrollIdConstructorAndAccessors() {
+        Date start = new Date();
+        Date end = new Date();
+        Payroll p = new Payroll("P-001", mockEmployee, start, end);
+        assertEquals("P-001", p.getPayrollID());
+        assertEquals(mockEmployee, p.getEmployee());
+        assertEquals(start, p.getWeekPeriodStart());
+        assertEquals(end, p.getWeekPeriodEnd());
+
+        p.setPayrollID("P-002");
+        p.setHoursWorked(40);
+        p.setOvertimeHours(2);
+        p.setGrossIncome(5000);
+        p.setNetPay(4200);
+        p.setPaymentDate(end);
+        p.setDeductions(new Deductions());
+
+        assertEquals("P-002", p.getPayrollID());
+        assertEquals(40, p.getHoursWorked(), 0.01);
+        assertEquals(2, p.getOvertimeHours(), 0.01);
+        assertEquals(5000, p.getGrossIncome(), 0.01);
+        assertEquals(4200, p.getNetPay(), 0.01);
+        assertEquals(end, p.getPaymentDate());
+        assertNotNull(p.getDeductions());
+    }
+
+    @Test
+    void testLoadAllDeductionsFalseWhenNoSalary() {
+        Employee noSalary = new Employee();
+        noSalary.setBenefits(new Benefits());
+        Payroll p = new Payroll(noSalary, 40, new Date(), new Date());
+        assertFalse(p.loadAllDeductions());
     }
 
     // Helper method to return week start and end dates where end is the last Sunday of the current month

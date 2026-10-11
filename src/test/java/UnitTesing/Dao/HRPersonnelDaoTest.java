@@ -521,13 +521,13 @@ public class HRPersonnelDaoTest {
     public void testLoadSummaryReportSuccess() throws SQLException {
         System.out.println("Test for Load Summary Report - Success");
 
-        ResultSet reports = hrPersonnelDao.loadSummaryReport(6, 2024);
-        assertNotNull(reports, "The ResultSet should not be null");
+        List<Map<String, Object>> reports = hrPersonnelDao.loadSummaryReport(6, 2024);
+        assertNotNull(reports, "The report list should not be null");
 
         System.out.println("Summary report for 2024-06:");
-        while (reports.next()) {
-            String fullName = reports.getString("Employee Full Name");
-            double netPay = reports.getDouble("Net Pay");
+        for (Map<String, Object> row : reports) {
+            String fullName = (String) row.get("Employee Full Name");
+            double netPay = ((Number) row.get("Net Pay")).doubleValue();
 
             System.out.println(fullName + " Net Pay: P" + netPay);
         }
