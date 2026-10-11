@@ -9,7 +9,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import utils.DbConnection;
@@ -20,7 +19,6 @@ import utils.DbConnection;
  */
 public class AttendanceRecordDao {
     private Connection conn;
-    private Statement statement = null;
     private ResultSet rs = null;
     private PreparedStatement preparedStatement = null;
 

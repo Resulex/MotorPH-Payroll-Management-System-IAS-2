@@ -64,4 +64,19 @@ public class AttendanceRecordTest {   private AttendanceRecord attendanceRecord;
     assertTrue(attendanceRecord.isTimeSet());
     }
 
+    @Test
+    void testGetTimeOut() {
+        assertEquals(timeOut, attendanceRecord.getTimeOut());
+    }
+
+    @Test
+    void testTwoArgConstructor() {
+        AttendanceRecord attendance = new AttendanceRecord(1002, testDate);
+        assertEquals(1002, attendance.getEmployeeId());
+        assertEquals(testDate, attendance.getDate());
+        assertNull(attendance.getTimeIn());
+        assertNull(attendance.getTimeOut());
+        assertFalse(attendance.isTimeSet());
+    }
+
 }

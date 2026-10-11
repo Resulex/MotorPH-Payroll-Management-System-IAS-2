@@ -7,7 +7,6 @@ package dao;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import models.AccountAccess;
 import models.Employee;
@@ -22,7 +21,6 @@ import utils.EmailSender;
  */
 public class EmailSenderDao {
     private Connection conn;
-    private Statement statement = null;
     private ResultSet rs = null;
     private PreparedStatement preparedStatement = null;
 

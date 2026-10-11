@@ -53,5 +53,25 @@ public class LeaveRequestTest {
         assertEquals(leaveStatus, leaveRequest.getLeaveStatus());
         assertEquals(reason, leaveRequest.getReason());
     }
+
+    @Test
+    public void testParameterizedConstructor() {
+        Employee employee = new Employee();
+        HRPersonnel hrPersonnel = new HRPersonnel();
+        Date startDate = new Date();
+        Date endDate = new Date();
+        LeaveRequest leaveRequest = new LeaveRequest(employee, 202, "Vacation Leave",
+                startDate, endDate, 2, "PENDING", hrPersonnel);
+
+        assertEquals(employee, leaveRequest.getEmployee());
+        assertEquals(202, leaveRequest.getLeaveID());
+        assertEquals("Vacation Leave", leaveRequest.getLeaveType());
+        assertEquals(startDate, leaveRequest.getStartDate());
+        assertEquals(endDate, leaveRequest.getEndDate());
+        assertEquals(2, leaveRequest.getDuration());
+        assertEquals("PENDING", leaveRequest.getLeaveStatus());
+        assertEquals(hrPersonnel, leaveRequest.getApprovedBy());
+        assertNull(leaveRequest.getReason());
+    }
 }
 

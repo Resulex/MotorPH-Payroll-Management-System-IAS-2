@@ -20,7 +20,6 @@ import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import java.io.File;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.util.HashMap;
 import javax.swing.JScrollBar;
 import utils.DbConnection;
@@ -32,7 +31,7 @@ import utils.ReportGenerator;
  */
 public class SummaryReport extends javax.swing.JPanel {
     private AccountAccess account;
-    private HRPersonnel user; 
+    private HRPersonnel user;
     List<Payroll> payrollList;
     /**
      * Creates new form SummaryReport
@@ -40,7 +39,7 @@ public class SummaryReport extends javax.swing.JPanel {
     public SummaryReport() {
         initComponents();
     }
-    
+
     public SummaryReport(AccountAccess account, HRPersonnel user) {
         this.account = account;
         this.user = user;
@@ -48,55 +47,44 @@ public class SummaryReport extends javax.swing.JPanel {
 //        populateWeekComboBox();
         loadPayrollData();
     }
-    
+
     private void loadPayrollData(){
         days.setVisible(false);
         HRPersonnelDao hrPersonnelDao = new HRPersonnelDao();
-        ResultSet payrollList = hrPersonnelDao.loadSummaryReport(
+        List<Map<String, Object>> summaryRows = hrPersonnelDao.loadSummaryReport(
                 filterMonthlyvalue.getMonth() + 1, filterMonthlyYearValue.getYear());
         DefaultTableModel model = (DefaultTableModel) payrollReportTable.getModel();
         model.setRowCount(0);
-        if(payrollList == null){
+        if(summaryRows == null || summaryRows.isEmpty()){
             days.setVisible(true);
             downloadSummary.setEnabled(false);
+            return;
         }
-        try{
-            if(!payrollList.isBeforeFirst()){
-                days.setVisible(true);
-                downloadSummary.setEnabled(false);
-            }
-            while(payrollList.next()){
-                Object data[] = {
-                    payrollList.getString("Employee No"),
-                    payrollList.getString("Employee Full Name"),
-                    payrollList.getString("Position"),
-                    payrollList.getString("Gross Income"),
-                    String.format("%.2f", (
-                        payrollList.getDouble("Social Security Contribution") + 
-                        payrollList.getDouble("Philhealth Contribution") + 
-                        payrollList.getDouble("Pag-Ibig Contribution") +
-                        payrollList.getDouble("Withholding Tax")
-                    )),
-                    String.format("%.2f", (
-                        payrollList.getDouble("Rice Subsidy") + 
-                        payrollList.getDouble("Phone Allowance") + 
-                        payrollList.getDouble("Clothing Allowance")
-                    )),
-                    payrollList.getDouble("Net Pay"),
-                };
+        for(Map<String, Object> payroll : summaryRows){
+            Object data[] = {
+                payroll.get("Employee No"),
+                payroll.get("Employee Full Name"),
+                payroll.get("Position"),
+                payroll.get("Gross Income"),
+                String.format("%.2f", (
+                    ((Number) payroll.get("Social Security Contribution")).doubleValue() +
+                    ((Number) payroll.get("Philhealth Contribution")).doubleValue() +
+                    ((Number) payroll.get("Pag-Ibig Contribution")).doubleValue() +
+                    ((Number) payroll.get("Withholding Tax")).doubleValue()
+                )),
+                String.format("%.2f", (
+                    ((Number) payroll.get("Rice Subsidy")).doubleValue() +
+                    ((Number) payroll.get("Phone Allowance")).doubleValue() +
+                    ((Number) payroll.get("Clothing Allowance")).doubleValue()
+                )),
+                payroll.get("Net Pay"),
+            };
 
-                // Add the row to the table model
-                model.addRow(data);
-                days.setVisible(false);
-                downloadSummary.setEnabled(true);
-            }
-        } catch (Exception e){
-            System.err.println("Something went wrong.");
-            e.printStackTrace();
-            days.setVisible(true);
-            downloadSummary.setEnabled(false);
+            // Add the row to the table model
+            model.addRow(data);
+            days.setVisible(false);
+            downloadSummary.setEnabled(true);
         }
-        
     }
 
     /**
@@ -259,7 +247,7 @@ public class SummaryReport extends javax.swing.JPanel {
     private void downloadSummaryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_downloadSummaryActionPerformed
         int month = filterMonthlyvalue.getMonth() + 1;
         int year = filterMonthlyYearValue.getYear();
-        
+
         try (Connection conn = DbConnection.getConnection()) {
             ReportGenerator generator = new ReportGenerator();
 
@@ -268,7 +256,7 @@ public class SummaryReport extends javax.swing.JPanel {
             // Output PDF path
             String userHome = System.getProperty("user.home");
             String fileName = year +"_" + month +".pdf";
-            String outputPath = userHome + "/Downloads/payroll_summary_report_" 
+            String outputPath = userHome + "/Downloads/payroll_summary_report_"
                     + fileName;
 
             // Optional: Report parameters
@@ -289,10 +277,10 @@ public class SummaryReport extends javax.swing.JPanel {
     private void jScrollPane9MouseWheelMoved(java.awt.event.MouseWheelEvent evt) {//GEN-FIRST:event_jScrollPane9MouseWheelMoved
         int rotation = evt.getWheelRotation();
                 JScrollBar verticalScrollBar = jScrollPane9.getVerticalScrollBar();
-                
+
                 // Control the scroll speed here (higher value = faster scroll)
                 int scrollAmount = rotation * 38;  // Adjust this multiplier for smoothness
-                
+
                 verticalScrollBar.setValue(verticalScrollBar.getValue() + scrollAmount);
     }//GEN-LAST:event_jScrollPane9MouseWheelMoved
 

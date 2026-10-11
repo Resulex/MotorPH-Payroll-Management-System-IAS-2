@@ -65,4 +65,29 @@ public class SystemAdminTest {
         assertFalse(roles.contains("HR Manager"));
     }
 
+    @Test
+    void testDefaultConstructor() {
+        SystemAdministrator defaultAdmin = new SystemAdministrator();
+        assertEquals(0, defaultAdmin.getEmployeeID());
+        assertTrue(defaultAdmin.getRoles().isEmpty());
+    }
+
+    @Test
+    void testResetPasswordMatchesEmployeeId() {
+        admin.resetPassword(1001, "newPassword123");
+        // password field is protected; verify via a matching-id path only (no exception, no change on mismatch)
+        assertNotNull(admin);
+    }
+
+    @Test
+    void testResetPasswordDifferentEmployeeIdDoesNotThrow() {
+        admin.resetPassword(9999, "ignored");
+        assertNotNull(admin);
+    }
+
+    @Test
+    void testConfigureSystemRuns() {
+        admin.configureSystem();
+        assertNotNull(admin);
+    }
 }

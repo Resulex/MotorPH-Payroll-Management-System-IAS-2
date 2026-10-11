@@ -72,4 +72,23 @@ public class BenefitsTesting {
     void testCalculateTotalAllowance() {
         assertEquals(3300, benefits.calculateTotalAllowance(), 0.01);
     }
+
+    @Test
+    void testGetBenefitId() {
+        assertEquals(0, benefits.getBenefitId());
+    }
+
+    @Test
+    void testDefaultConstructor() {
+        Benefits empty = new Benefits();
+        assertEquals(0, empty.getBenefitId());
+        assertEquals(0, empty.getBasicSalary(), 0.01);
+        assertEquals(0, empty.getGrossSemiMonthlyRate(), 0.01);
+        assertEquals(0, empty.getHourlyRate(), 0.01);
+        assertEquals(0, empty.getRiceSubsidy(), 0.01);
+        assertEquals(0, empty.getPhoneAllowance(), 0.01);
+        assertEquals(0, empty.getClothingAllowance(), 0.01);
+        assertEquals(0, empty.calculateHourlyRate(), 0.01);
+        assertEquals(0, empty.calculateTotalAllowance(), 0.01);
+    }
 }

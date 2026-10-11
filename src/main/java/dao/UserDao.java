@@ -4,8 +4,6 @@
  */
 package dao;
 
-import models.Address;
-import models.Benefits;
 import models.Employee;
 import models.HRPersonnel;
 import models.SystemAdministrator;
@@ -14,7 +12,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import utils.DbConnection;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,9 +22,6 @@ import java.util.List;
  */
 public class UserDao {
     private Connection conn;
-    private Statement statement = null;
-    private ResultSet rs = null;
-    private PreparedStatement preparedStatement = null;
 
     // Kept your original constructor
     public UserDao(Connection conn) {
@@ -206,8 +200,8 @@ public class UserDao {
     public List<String> getLockedAccounts() {
         List<String> lockedAccounts = new ArrayList<>();
         String sql = "SELECT employee_id FROM user_credentials WHERE is_locked = TRUE";
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        try (PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
             while (rs.next()) {
                 lockedAccounts.add(rs.getString("employee_id"));
             }
@@ -227,8 +221,8 @@ public class UserDao {
                      "FROM employees e " +
                      "JOIN user_credentials uc ON e.employee_id = uc.employee_id";
 
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        try (PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
 
             while (rs.next()) {
                 String employeeId = rs.getString("employee_id");
@@ -276,64 +270,30 @@ public class UserDao {
         if(employeeId == 0 || isAuth == false){
             return user;
         }
-        try {
-            // Create a statement object
-            statement = conn.createStatement();
+        // Define the query
+        String query = "SELECT * FROM employee_view " 
+                + "WHERE employee_id = ?";
 
-            // Define the query
-            String query = "SELECT * FROM employee_view " 
-                    + "WHERE employee_id = " + employeeId ;
+        try (PreparedStatement preparedStatement = conn.prepareStatement(query)) {
+            preparedStatement.setInt(1, employeeId);
 
             // Execute the query
-            rs = statement.executeQuery(query);
-            // If user exists, populate user information based on role
-            if (rs.next()) {
-                
-                if ("HR Personnel".equals(role)) {
-                    user = new HRPersonnel();
-                } else if ("System Admin".equals(role)) {
-                    user = new SystemAdministrator();
+            try (ResultSet rs = preparedStatement.executeQuery()) {
+                // If user exists, populate user information based on role
+                if (rs.next()) {
+
+                    if ("HR Personnel".equals(role)) {
+                        user = new HRPersonnel();
+                    } else if ("System Admin".equals(role)) {
+                        user = new SystemAdministrator();
+                    } else {
+                        user = new Employee(); // Assign Employee role
+                    }
+
+                    DaoMappers.populateUser(rs, user);
                 } else {
-                    user = new Employee(); // Assign Employee role
+                    System.out.println("No user");
                 }
-                
-                // Set common employee details
-                user.setEmployeeID(rs.getInt("employee_id"));
-                user.setLastName(rs.getString("last_name"));
-                user.setFirstName(rs.getString("first_name"));
-                user.setBirthday(rs.getDate("birthdate"));
-                user.setPhoneNumber(rs.getString("phone_number"));
-                user.setSssNumber(rs.getString("sss_number"));
-                user.setPhilhealthNumber(rs.getString("philhealth_number"));
-                user.setTinNumber(rs.getString("tin_number"));
-                user.setPagibigNumber(rs.getString("pagibig_number"));
-                user.setPosition(rs.getString("position"));
-                user.setDepartment(rs.getString("department"));
-                user.setDateHired(rs.getDate("date_hired"));
-                user.setStatus(rs.getString("status"));
-                    user.setImmediateSupervisor(rs.getInt("immediate_supervisor"));
-                    
-                    // Create Benefits object and assign to Employee
-                    Benefits benefit = new Benefits(
-                        rs.getInt("basic_salary"),
-                        rs.getInt("gross_semi_monthly_rate"),
-                        rs.getInt("hourly_rate"),
-                        rs.getInt("rice_subsidy"),
-                        rs.getInt("phone_allowance"),
-                        rs.getInt("clothing_allowance")
-                    );
-                    user.setBenefits(benefit);
-                
-                // Populate address
-                Address address = new Address();
-                address.setBarangay(rs.getString("barangay"));
-                address.setCity(rs.getString("city"));
-                address.setProvince(rs.getString("province"));
-                address.setStreet(rs.getString("street"));
-                address.setZipcode(rs.getString("zipcode"));
-                user.setAddress(address);
-            } else {
-                System.out.println("No user");
             }
         } catch (SQLException e) {
             System.err.println("Error while executing SQL query!");

@@ -15,7 +15,7 @@ import java.sql.SQLException;
 public class DbConnection {
     private static final String URL = "jdbc:mysql://localhost:3306/payrollsystem_db_aoop";
     private static final String USER = "root";
-    private static final String PASS = "motorph_db2025";
+    private static final String PASS = "Alex123!!";
     private static Connection conn = null;
 
     public static Connection getConnection() {

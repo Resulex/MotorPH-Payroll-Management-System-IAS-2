@@ -63,4 +63,21 @@ public class AccountAccessTest {
         assertFalse(accountAccess.getIsAuthenticated());
         assertNull(accountAccess.getRole());
     }
+
+    @Test
+    void testGetAndSetEmail() {
+        assertNull(accountAccess.getEmail());
+        accountAccess.setEmail("employee@motorph.com");
+        assertEquals("employee@motorph.com", accountAccess.getEmail());
+    }
+
+    @Test
+    void testDefaultConstructorDefaults() {
+        AccountAccess empty = new AccountAccess();
+        assertEquals(0, empty.getEmployeeNumber());
+        assertFalse(empty.getIsAuthenticated());
+        assertNull(empty.getPermissions());
+        assertNull(empty.getRole());
+        assertNull(empty.getEmail());
+    }
 }
