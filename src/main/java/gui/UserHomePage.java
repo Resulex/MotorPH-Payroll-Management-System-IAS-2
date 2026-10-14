@@ -13,6 +13,8 @@ import models.HRPersonnel;
 import models.SystemAdministrator;
 import dao.AccountAccessDao;
 import dao.UserDao;
+import utils.SessionManager;
+import java.awt.Window;
 
 /**
  *
@@ -43,6 +45,10 @@ public class UserHomePage extends javax.swing.JFrame {
         welcomeLabel.setText("Welcome, " + user.getFirstName());
         adminProfile.setText(account.getRole());
         initializeMenus();
+
+          if (account != null && account.getIsAuthenticated()) {
+            SessionManager.start(this::handleSessionTimeout);
+        }
     }
 
     private void initializeMenus() {
@@ -274,9 +280,11 @@ public class UserHomePage extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void logoutActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_logoutActionPerformed
-        dispose();
-        LoginPage frame = new LoginPage();
-        frame.setVisible(true);
+    SessionManager.stop();
+
+    dispose();
+    LoginPage frame = new LoginPage();
+    frame.setVisible(true);
     }//GEN-LAST:event_logoutActionPerformed
 
     /**
@@ -326,4 +334,27 @@ public class UserHomePage extends javax.swing.JFrame {
     private javax.swing.JPanel topPanel;
     private javax.swing.JLabel welcomeLabel;
     // End of variables declaration//GEN-END:variables
+
+    private void handleSessionTimeout() {
+    SessionManager.stop();
+
+    if (account != null) {
+        account.logoutUser(user);
+        account.setPermissions(java.util.Collections.emptyList());
+        account.setEmployeeNumber(0);
+    }
+
+    dispose();
+
+    LoginPage loginPage = new LoginPage();
+    loginPage.setVisible(true);
+
+   
+    javax.swing.JOptionPane.showMessageDialog(
+        loginPage,
+        "Your session has expired after 15 minutes of inactivity. Please log in again.",
+        "Session Expired",
+        javax.swing.JOptionPane.WARNING_MESSAGE
+    );
+    }
 }
