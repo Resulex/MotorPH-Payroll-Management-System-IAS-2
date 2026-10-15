@@ -1,0 +1,69 @@
+==============================================================================
+MOTORPH PAYROLL - JDBC PREPAREDSTATEMENT / RESULTSET RESOURCE LEAK DEMO
+==============================================================================
+Run label         : after
+Build under test  : /Users/alexresu/MotorPH-Payroll-Management-System-IAS-2
+Classes measured  : .../MotorPH-Payroll-Management-System-IAS-2/target/classes
+Iterations        : 100  (6 DAO calls per iteration)
+JDBC URL          : jdbc:mysql://localhost:3306/payrollsystem_db_aoop
+Driver shim       : installed (1 com.mysql driver(s) deregistered)
+Server-side PS    : useServerPrepStmts=true (forced by the harness)
+HRPersonnelDao.loadSummaryReport returned:
+    java.util.List  <-- 34 rows mapped inside the DAO, ResultSet closed
+------------------------------------------------------------------------------
+JDBC OBJECT                            CREATED      CLOSED      LEAKED
+------------------------------------------------------------------------------
+Connections                                 11           0          11
+Statements (all)                           700         700           0
+  java.sql.Statement                         0           0           0
+  java.sql.PreparedStatement               700         700           0
+ResultSets                                 700         700           0
+------------------------------------------------------------------------------
+LEAKED OBJECTS BY CALL SITE (where the never-closed object was created)
+------------------------------------------------------------------------------
+  none - every statement and result set was closed
+------------------------------------------------------------------------------
+SQL LEFT OPEN (first 0 of 0)
+------------------------------------------------------------------------------
+  none
+------------------------------------------------------------------------------
+METHOD EXECUTION HEALTH (a mismatch here invalidates the comparison)
+------------------------------------------------------------------------------
+  AccountAccessDao.login                                      100/100 ok
+  AccountAccessDao.getAccountEmail                            100/100 ok
+  UserDao.getUserInfo                                         100/100 ok
+  EmployeeDao.loadAttendanceList                              100/100 ok
+  HRPersonnelDao.loadSummaryReport (reflective)               100/100 ok
+  UserDao.getRoleName (control - already closed before the fix)  100/100 ok
+  new AccountAccessDao() [connection probe]                     10/10 ok
+------------------------------------------------------------------------------
+MYSQL SERVER-SIDE VIEW (what the database itself still holds)
+------------------------------------------------------------------------------
+                                             START           MID           END
+  prepared_statements_instances                  0             0             0
+  Prepared_stmt_count                            0             0             0
+  UNCLOSED (prepare - close)                  2400          2400          2400
+  Threads_connected                             16            16            16
+  Com_stmt_prepare                            5800          6150          6500
+  Com_stmt_close                              3400          3750          4100
+  (Threads_connected starts high because connections leaked by earlier runs
+   are still open on the server - that is the same leak, seen from MySQL.)
+------------------------------------------------------------------------------
+VERDICT
+------------------------------------------------------------------------------
+  FIXED - 0 statements and 0 result sets left unclosed.
+  Every JDBC object opened by the DAO layer was released deterministically
+  (try-with-resources), instead of waiting for garbage collection.
+  NOTE - 11 connection(s) were also left open: utils.DbConnection
+  opens a new physical connection on every getConnection() call and it is not
+  closed by the DAO layer. That is outside the scope of commit 5785fa0 and is
+  expected to appear in BOTH builds.
+------------------------------------------------------------------------------
+MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)
+RESOURCE|Statement|0|0|0
+RESOURCE|PreparedStatement|700|700|0
+RESOURCE|CallableStatement|0|0|0
+RESOURCE|Connections|11|0|11
+RESOURCE|ResultSets|700|700|0
+RESOURCE|Statements (all)|700|700|0
+==============================================================================

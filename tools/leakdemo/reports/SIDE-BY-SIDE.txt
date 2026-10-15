@@ -1,0 +1,24 @@
+==============================================================================
+ BEFORE vs AFTER - JDBC PREPAREDSTATEMENT / RESULTSET LEAK (commit 5785fa0)
+==============================================================================
+ BEFORE build : /Users/alexresu/OOPMotorPh_Payroll_System
+ AFTER  build : /Users/alexresu/MotorPH-Payroll-Management-System-IAS-2
+ Iterations   : 100 per DAO call
+
+RESOURCE                 BEFORE (c | cl | LEAK)   AFTER (c | cl | LEAK)   
+------------------------------------------------------------------------------
+Statement                600 | 0 | 600            0 | 0 | 0               
+PreparedStatement        500 | 100 | 400          700 | 700 | 0           
+CallableStatement        0 | 0 | 0                0 | 0 | 0               
+Connections              11 | 0 | 11              11 | 0 | 11             
+ResultSets               700 | 100 | 600          700 | 700 | 0           
+Statements (all)         1100 | 100 | 1000        700 | 700 | 0           
+
+ Result sets leaked : BEFORE 600  ->  AFTER 0
+ Statements leaked  : BEFORE 1000  ->  AFTER 0
+
+ NOTE: 'created' differs between builds by design - the refactor also replaced
+ Statement (string-built SQL) with PreparedStatement (bound parameters), so the
+ post-fix build opens more prepared statements and zero raw statements. The
+ metric that matters is LEAKED, which goes to zero.
+==============================================================================
