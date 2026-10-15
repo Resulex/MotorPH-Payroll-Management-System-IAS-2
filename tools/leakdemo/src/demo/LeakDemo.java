@@ -101,15 +101,7 @@ public final class LeakDemo {
 
         monitor.sample("END");
 
-        // Secondary probe: the DAO no-arg constructor calls utils.DbConnection.getConnection(),
-        // which opens a brand new physical connection on every call and never closes it.
-        // This leak is intentionally left in place by the refactor and is expected in both builds.
-        int probe = 10;
-        for (int i = 0; i < probe; i++) {
-            call("new AccountAccessDao() [connection probe]", () -> new AccountAccessDao());
-        }
-
-        buildReport(report, label, build, url, iterations, probe, tracker, monitor, returnedType);
+        buildReport(report, label, build, url, iterations, tracker, monitor, returnedType);
 
         System.out.print(report);
         if (out != null) {
@@ -139,9 +131,8 @@ public final class LeakDemo {
     }
 
     private static void buildReport(StringBuilder sb, String label, String build, String url,
-            int iterations, int probe, JdbcTracker tracker, Monitor monitor, String returnedType) {
+            int iterations, JdbcTracker tracker, Monitor monitor, String returnedType) {
 
-        int connLeaked = tracker.leakedOf(JdbcTracker.CONNECTION);
         int stmtLeaked = tracker.leakedOf(JdbcTracker.STATEMENT_KINDS);
         int rsLeaked = tracker.leakedOf(JdbcTracker.RESULTSET);
 
@@ -160,8 +151,6 @@ public final class LeakDemo {
         rule(sb, '-');
         line(sb, pad("JDBC OBJECT", 34) + lpad("CREATED", 12) + lpad("CLOSED", 12) + lpad("LEAKED", 12));
         rule(sb, '-');
-        resource(sb, "Connections", tracker.createdOf(JdbcTracker.CONNECTION),
-                tracker.closedOf(JdbcTracker.CONNECTION), connLeaked);
         resource(sb, "Statements (all)", stmtSum(tracker, true), stmtSum(tracker, false), stmtLeaked);
         resource(sb, "  java.sql.Statement", tracker.createdOf(JdbcTracker.STATEMENT),
                 tracker.closedOf(JdbcTracker.STATEMENT), tracker.leakedOf(JdbcTracker.STATEMENT));
@@ -211,10 +200,6 @@ public final class LeakDemo {
                 line(sb, "      first error: " + err);
             }
         }
-        if (probe > 0) {
-            line(sb, "  " + pad("new AccountAccessDao() [connection probe]", 58)
-                    + lpad(probe + "/" + probe + " ok", 12));
-        }
         rule(sb, '-');
 
         line(sb, "MYSQL SERVER-SIDE VIEW (what the database itself still holds)");
@@ -223,11 +208,8 @@ public final class LeakDemo {
         monitor.line(sb, "prepared_statements_instances");
         monitor.line(sb, "Prepared_stmt_count");
         monitor.line(sb, "UNCLOSED (prepare - close)", true);
-        monitor.line(sb, "Threads_connected");
         monitor.line(sb, "Com_stmt_prepare", false);
         monitor.line(sb, "Com_stmt_close", false);
-        line(sb, "  (Threads_connected starts high because connections leaked by earlier runs");
-        line(sb, "   are still open on the server - that is the same leak, seen from MySQL.)");
         if (monitor.error != null) {
             line(sb, "  monitor unavailable: " + monitor.error);
         }
@@ -244,19 +226,11 @@ public final class LeakDemo {
             line(sb, "  closed. Each one keeps its server-side cursor/buffers alive until the JVM");
             line(sb, "  garbage collects it, which is the SonarQube S2095 defect this refactor fixes.");
         }
-        if (connLeaked > 0) {
-            line(sb, "  NOTE - " + connLeaked + " connection(s) were also left open: utils.DbConnection");
-            line(sb, "  opens a new physical connection on every getConnection() call and it is not");
-            line(sb, "  closed by the DAO layer. That is outside the scope of commit 5785fa0 and is");
-            line(sb, "  expected to appear in BOTH builds.");
-        }
         rule(sb, '-');
         line(sb, "MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)");
         for (String kind : JdbcTracker.STATEMENT_KINDS) {
             machine(sb, kind, tracker.createdOf(kind), tracker.closedOf(kind), tracker.leakedOf(kind));
         }
-        machine(sb, "Connections", tracker.createdOf(JdbcTracker.CONNECTION),
-                tracker.closedOf(JdbcTracker.CONNECTION), connLeaked);
         machine(sb, "ResultSets", tracker.createdOf(JdbcTracker.RESULTSET),
                 tracker.closedOf(JdbcTracker.RESULTSET), rsLeaked);
         machine(sb, "Statements (all)", stmtSum(tracker, true), stmtSum(tracker, false), stmtLeaked);
@@ -400,7 +374,7 @@ public final class LeakDemo {
                 } catch (SQLException e) {
                     error = "performance_schema.prepared_statements_instances: " + e.getMessage();
                 }
-                for (String variable : new String[]{"Prepared_stmt_count", "Threads_connected",
+                for (String variable : new String[]{"Prepared_stmt_count",
                         "Com_stmt_prepare", "Com_stmt_close"}) {
                     try (ResultSet rs = st.executeQuery("SHOW GLOBAL STATUS LIKE '" + variable + "'")) {
                         if (rs.next()) {

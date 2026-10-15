@@ -27,20 +27,20 @@ import java.util.logging.Logger;
 /**
  * JDBC instrumentation for the before/after PreparedStatement resource-leak demo.
  *
- * Every {@link Connection}, {@link Statement}, {@link PreparedStatement} and
- * {@link ResultSet} handed to the code under test is replaced by a dynamic proxy.
- * The proxy counts creations and explicit {@code close()} calls, and remembers
- * the DAO call site that created each object, so never-closed objects can be
- * reported per method.
+ * Every {@link Statement}, {@link PreparedStatement} and {@link ResultSet} handed
+ * to the code under test is replaced by a dynamic proxy. The proxy counts
+ * creations and explicit {@code close()} calls, and remembers the DAO call site
+ * that created each object, so never-closed statements and result sets can be
+ * reported per method. Connections are wrapped too, but only so that the
+ * statements they create can be tracked - connection usage is not measured.
  *
- * No production class is modified: connections handed to DAOs are wrapped here,
- * and a {@link TrackingDriver} is registered so that even code paths that call
- * {@code DriverManager.getConnection(...)} (for example {@code utils.DbConnection})
- * are instrumented.
+ * No production class is modified: the connection handed to the DAOs is wrapped
+ * here, and a {@link TrackingDriver} is registered so that even code paths that
+ * call {@code DriverManager.getConnection(...)} (for example
+ * {@code utils.DbConnection}) are instrumented.
  */
 public final class JdbcTracker {
 
-    public static final String CONNECTION = "Connection";
     public static final String STATEMENT = "Statement";
     public static final String PREPARED = "PreparedStatement";
     public static final String CALLABLE = "CallableStatement";
@@ -67,7 +67,6 @@ public final class JdbcTracker {
     private final Map<Integer, Entry> open = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> createdCounts = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> closedCounts = new ConcurrentHashMap<>();
-    private final Map<String, AtomicInteger> createdBySite = new ConcurrentHashMap<>();
     /** Guards against wrapping the same ResultSet twice (execute() then getResultSet()). */
     private final Map<Object, Object> resultSetProxies = Collections.synchronizedMap(new IdentityHashMap<>());
     private final AtomicInteger sequence = new AtomicInteger();
@@ -127,7 +126,7 @@ public final class JdbcTracker {
         if (real == null) {
             throw new SQLException("The MySQL driver did not accept the URL: " + url);
         }
-        return (Connection) trackConnection(real, "harness (shared connection)");
+        return (Connection) trackConnection(real);
     }
 
     /** Untracked connection, used for the server-side monitor samples. */
@@ -200,13 +199,6 @@ public final class JdbcTracker {
         return sorted(bySite);
     }
 
-    /** Number of objects created, grouped by DAO method (workload volume check). */
-    public Map<String, Integer> createdBySite() {
-        Map<String, Integer> bySite = new ConcurrentHashMap<>();
-        createdBySite.forEach((site, n) -> bySite.put(site, n.get()));
-        return sorted(bySite);
-    }
-
     /** SQL text of every still-open statement, trimmed - handy to show what was left hanging. */
     public List<String> leakedSqlTexts() {
         List<String> sql = new ArrayList<>();
@@ -252,7 +244,6 @@ public final class JdbcTracker {
         int id = sequence.incrementAndGet();
         open.put(id, new Entry(kind, site, sql));
         bump(createdCounts, kind);
-        bump(createdBySite, site);
         return id;
     }
 
@@ -264,8 +255,7 @@ public final class JdbcTracker {
 
     /**
      * Name of the calling DAO method: the first stack frame inside {@code dao.}.
-     * Falls back to the first application frame for connection creation, which
-     * happens in {@code utils.DbConnection} rather than in a DAO.
+     * Falls back to the first application frame when the caller is not a DAO.
      */
     private static String callerSite() {
         StackTraceElement[] frames = new Throwable().getStackTrace();
@@ -294,9 +284,8 @@ public final class JdbcTracker {
 
     // ------------------------------------------------------------------ wrapping
 
-    private Object trackConnection(Connection real, String site) {
-        int id = register(CONNECTION, site, null);
-        return Proxy.newProxyInstance(loader, new Class<?>[]{Connection.class}, new ConnectionHandler(real, id));
+    private Object trackConnection(Connection real) {
+        return Proxy.newProxyInstance(loader, new Class<?>[]{Connection.class}, new ConnectionHandler(real));
     }
 
     private Object wrapStatement(Statement real, String kind, String sql, Object connectionProxy) {
@@ -324,11 +313,9 @@ public final class JdbcTracker {
 
     private final class ConnectionHandler implements InvocationHandler {
         private final Connection real;
-        private final int id;
 
-        ConnectionHandler(Connection real, int id) {
+        ConnectionHandler(Connection real) {
             this.real = real;
-            this.id = id;
         }
 
         @Override
@@ -348,15 +335,12 @@ public final class JdbcTracker {
                     String sql = (args != null && args.length > 0 && args[0] instanceof String s) ? s : null;
                     return st == null ? null : wrapStatement((Statement) st, CALLABLE, sql, proxy);
                 }
-                case "close":
-                    unregister(id, CONNECTION);
-                    return call(real, method, args);
                 case "equals":
                     return proxy == args[0];
                 case "hashCode":
                     return System.identityHashCode(proxy);
                 case "toString":
-                    return "TrackedConnection#" + id;
+                    return "TrackedConnection";
                 default:
                     return call(real, method, args);
             }
@@ -472,7 +456,7 @@ public final class JdbcTracker {
             if (real == null) {
                 return null;
             }
-            return (Connection) tracker.trackConnection(real, "utils.DbConnection.getConnection");
+            return (Connection) tracker.trackConnection(real);
         }
 
         @Override

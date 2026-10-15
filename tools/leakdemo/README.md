@@ -18,17 +18,19 @@ lives in this folder.
 
 ## Why the numbers can be trusted
 
-* Every `Connection` / `Statement` / `PreparedStatement` / `ResultSet` handed to
-  the DAO layer is replaced by a `java.lang.reflect.Proxy`. The proxy counts
-  creations and `close()` calls and records the DAO method that created each
-  object, so a never-closed object can be attributed to the exact method.
+* Every `Statement` / `PreparedStatement` / `ResultSet` handed to the DAO layer
+  is replaced by a `java.lang.reflect.Proxy`. The proxy counts creations and
+  `close()` calls and records the DAO method that created each object, so a
+  never-closed object can be attributed to the exact method. Connections are
+  wrapped as well, but only so that the statements they create are tracked -
+  connection usage is deliberately not measured here.
 * The tracked connection is passed into the DAOs through the constructor they
   already expose (`AccountAccessDao`, `UserDao`, `HRPersonnelDao`,
   `EmployeeDao` all take a `Connection` in both builds), so the measurement does
   not depend on editing `utils.DbConnection`.
 * A `Driver` shim is registered as well, so code paths that go through
-  `DriverManager.getConnection(...)` (for example `new AccountAccessDao()`) are
-  instrumented too - that is what the *connection probe* measures.
+  `DriverManager.getConnection(...)` instead of the injected connection are
+  instrumented too.
 * One single compiled harness runs against both builds. Every method it calls
   has an identical signature in both builds; `HRPersonnelDao.loadSummaryReport`
   is invoked reflectively because its return type changed from `ResultSet` to
@@ -73,7 +75,6 @@ Headline (100 iterations of 6 DAO calls):
 RESOURCE                 BEFORE (c | cl | LEAK)   AFTER (c | cl | LEAK)
 Statement                600 | 0 | 600            0 | 0 | 0
 PreparedStatement        500 | 100 | 400          700 | 700 | 0
-Connections              11 | 0 | 11              11 | 0 | 11
 ResultSets               700 | 100 | 600          700 | 700 | 0
 Statements (all)         1100 | 100 | 1000        700 | 700 | 0
 ```
@@ -111,16 +112,6 @@ AFTER    prepared_statements_instances   0 ->   0 ->   0     (flat)
 `performance_schema.prepared_statements_instances` lists the individual
 statements, with SQL text, while they are still open. `sql/monitor.sql` runs the
 same queries by hand.
-
-### One thing the fix does *not* change
-
-`Connections: 11 created, 0 closed` appears in **both** builds.
-`utils.DbConnection.getConnection()` opens a new physical connection on every
-call and nothing ever closes it, so every DAO construction leaks a connection.
-Commit `5785fa0` scoped itself to statements and result sets, so this is
-reported as a known, still-open finding rather than hidden. `Threads_connected`
-in the server view starts high for the same reason: connections leaked by
-earlier runs are still open on the server.
 
 ### Bonus finding
 

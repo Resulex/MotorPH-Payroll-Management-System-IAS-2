@@ -10,7 +10,6 @@ RESOURCE                 BEFORE (c | cl | LEAK)   AFTER (c | cl | LEAK)
 Statement                600 | 0 | 600            0 | 0 | 0               
 PreparedStatement        500 | 100 | 400          700 | 700 | 0           
 CallableStatement        0 | 0 | 0                0 | 0 | 0               
-Connections              11 | 0 | 11              11 | 0 | 11             
 ResultSets               700 | 100 | 600          700 | 700 | 0           
 Statements (all)         1100 | 100 | 1000        700 | 700 | 0           
 

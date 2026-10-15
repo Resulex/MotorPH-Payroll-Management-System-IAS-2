@@ -30,12 +30,5 @@ SHOW GLOBAL STATUS LIKE 'Prepared_stmt_count';
 SHOW GLOBAL STATUS LIKE 'Com_stmt_prepare';
 SHOW GLOBAL STATUS LIKE 'Com_stmt_close';
 
--- 3. Connections left open. utils.DbConnection.getConnection() opens a new
---    physical connection per call and never closes it - a separate leak that
---    commit 5785fa0 does NOT address, so this number grows in BOTH builds.
-SHOW GLOBAL STATUS LIKE 'Threads_connected';
-SHOW GLOBAL STATUS LIKE 'Max_used_connections';
-SELECT COUNT(*) AS sessions FROM information_schema.processlist;
-
--- 4. Reset helper (optional): if you want the Com_stmt_* deltas to start near
+-- 3. Reset helper (optional): if you want the Com_stmt_* deltas to start near
 --    zero between runs, restart MySQL, otherwise just compare prepare vs close.

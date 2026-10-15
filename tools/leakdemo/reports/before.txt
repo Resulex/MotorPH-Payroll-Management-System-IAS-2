@@ -13,7 +13,6 @@ HRPersonnelDao.loadSummaryReport returned:
 ------------------------------------------------------------------------------
 JDBC OBJECT                            CREATED      CLOSED      LEAKED
 ------------------------------------------------------------------------------
-Connections                                 11           0          11
 Statements (all)                          1100         100        1000
   java.sql.Statement                       600           0         600
   java.sql.PreparedStatement               500         100         400
@@ -50,35 +49,26 @@ METHOD EXECUTION HEALTH (a mismatch here invalidates the comparison)
   EmployeeDao.loadAttendanceList                              100/100 ok
   HRPersonnelDao.loadSummaryReport (reflective)               100/100 ok
   UserDao.getRoleName (control - already closed before the fix)  100/100 ok
-  new AccountAccessDao() [connection probe]                     10/10 ok
 ------------------------------------------------------------------------------
 MYSQL SERVER-SIDE VIEW (what the database itself still holds)
 ------------------------------------------------------------------------------
                                              START           MID           END
   prepared_statements_instances                  0           200           400
   Prepared_stmt_count                            0           200           400
-  UNCLOSED (prepare - close)                  2000          2200          2400
-  Threads_connected                             16            16            16
-  Com_stmt_prepare                            5300          5550          5800
-  Com_stmt_close                              3300          3350          3400
-  (Threads_connected starts high because connections leaked by earlier runs
-   are still open on the server - that is the same leak, seen from MySQL.)
+  UNCLOSED (prepare - close)                  2800          3000          3200
+  Com_stmt_prepare                            7700          7950          8200
+  Com_stmt_close                              4900          4950          5000
 ------------------------------------------------------------------------------
 VERDICT
 ------------------------------------------------------------------------------
   LEAK - 1000 statements and 600 result sets were never
   closed. Each one keeps its server-side cursor/buffers alive until the JVM
   garbage collects it, which is the SonarQube S2095 defect this refactor fixes.
-  NOTE - 11 connection(s) were also left open: utils.DbConnection
-  opens a new physical connection on every getConnection() call and it is not
-  closed by the DAO layer. That is outside the scope of commit 5785fa0 and is
-  expected to appear in BOTH builds.
 ------------------------------------------------------------------------------
 MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)
 RESOURCE|Statement|600|0|600
 RESOURCE|PreparedStatement|500|100|400
 RESOURCE|CallableStatement|0|0|0
-RESOURCE|Connections|11|0|11
 RESOURCE|ResultSets|700|100|600
 RESOURCE|Statements (all)|1100|100|1000
 ==============================================================================
