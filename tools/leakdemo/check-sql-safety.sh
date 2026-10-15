@@ -43,20 +43,40 @@ printf '%-48s %-13s %-13s\n' 'connection.createStatement() sites' "$BEFORE_CREAT
 printf '%-48s %-13s %-13s\n' 'SQL text with an appended value  = " +' "$BEFORE_CONCAT" "$AFTER_CONCAT"
 printf '%s\n' "-------------------------------------------------------------------------------"
 
-printf '%s\n' " BEFORE - the pattern SonarQube flags (value concatenated into the SQL text):"
-printf '%s\n' "   (paths are relative to src/main/java)"
-find "$BEFORE_REPO/src/main/java" -name '*.java' -print0 2>/dev/null \
-  | xargs -0 grep -nH -- '= " +' 2>/dev/null \
-  | sed "s|^$BEFORE_REPO/src/main/java/||" \
-  | sed 's/^\([^:]*:[0-9]*:\)[[:space:]]*/\1 /' \
-  | sed 's/^/    /'
-printf '%s\n' " AFTER  - the same lines after the refactor (parameter bound with ?):"
-find "$AFTER_REPO/src/main/java" -name '*.java' -print0 2>/dev/null \
-  | xargs -0 grep -nH -- '= " +' 2>/dev/null \
-  | sed "s|^$AFTER_REPO/src/main/java/||" \
-  | sed 's/^\([^:]*:[0-9]*:\)[[:space:]]*/\1 /' \
-  | sed 's/^/    /'
-printf '%s\n' "    (no matches above = no runtime value is concatenated into SQL any more)"
+# Lists matching source lines as "path:line: code", indented, sorted, capped to
+# fit an 80-column terminal. For createStatement() sites only the call itself is
+# shown, so the line never has to be truncated. Prints nothing when there are no
+# matches.
+show_sites() {   # repo pattern
+  find "$1/src/main/java" -name '*.java' -print0 2>/dev/null \
+    | xargs -0 grep -nH -- "$2" 2>/dev/null \
+    | sed "s|^$1/src/main/java/||" \
+    | sed 's/^\([^:]*:[0-9]*:\)[[:space:]]*/\1 /' \
+    | sed 's/^\([^:]*:[0-9]*:\).*[^A-Za-z0-9_]\([A-Za-z_][A-Za-z0-9_]*\.createStatement(.*\)$/\1 \2/' \
+    | cut -c1-74 \
+    | sed 's/^/    /' \
+    | sort -t: -k1,1 -k2,2n
+}
+
+printf '%s\n' " WHAT SONARQUBE FLAGS - dynamically built SQL"
+printf '%s\n' " (paths are relative to src/main/java)"
+printf '%s\n' "-------------------------------------------------------------------------------"
+printf '%s\n' " BEFORE - connection.createStatement() sites ($BEFORE_CREATE):"
+show_sites "$BEFORE_REPO" 'createStatement('
+printf '%s\n' " BEFORE - SQL text with an appended value, no ? placeholder ($BEFORE_CONCAT):"
+show_sites "$BEFORE_REPO" '= " +'
+printf '%s\n' " AFTER  - connection.createStatement() sites ($AFTER_CREATE):"
+if [ "$AFTER_CREATE" = "0" ]; then
+  printf '%s\n' "    none - every query is a prepared statement"
+else
+  show_sites "$AFTER_REPO" 'createStatement('
+fi
+printf '%s\n' " AFTER  - SQL text with an appended value, no ? placeholder ($AFTER_CONCAT):"
+if [ "$AFTER_CONCAT" = "0" ]; then
+  printf '%s\n' "    none - no value is concatenated into SQL any more"
+else
+  show_sites "$AFTER_REPO" '= " +'
+fi
 printf '%s\n' "-------------------------------------------------------------------------------"
 printf '%s\n' " WHAT CHANGED"
 printf ' BEFORE FIX : %s queries were built with createStatement(); %s of them appended\n' \
