@@ -32,35 +32,39 @@ rule
 printf ' BEFORE build : %s\n' "$BEFORE_REPO"
 printf ' AFTER  build : %s\n' "$AFTER_REPO"
 printf '%s\n' "-------------------------------------------------------------------------------"
+BEFORE_CREATE="$(count_matches "$BEFORE_REPO" 'createStatement(')"
+AFTER_CREATE="$(count_matches "$AFTER_REPO" 'createStatement(')"
+BEFORE_CONCAT="$(count_matches "$BEFORE_REPO" '= " +')"
+AFTER_CONCAT="$(count_matches "$AFTER_REPO" '= " +')"
+
 printf '%-48s %-13s %-13s\n' 'METRIC (whole src/main/java)' 'BEFORE' 'AFTER'
 printf '%s\n' "-------------------------------------------------------------------------------"
-printf '%-48s %-13s %-13s\n' 'connection.createStatement() sites' \
-  "$(count_matches "$BEFORE_REPO" 'createStatement(')" \
-  "$(count_matches "$AFTER_REPO" 'createStatement(')"
-printf '%-48s %-13s %-13s\n' 'SQL text with an appended value  = " +' \
-  "$(count_matches "$BEFORE_REPO" '= " +')" \
-  "$(count_matches "$AFTER_REPO" '= " +')"
+printf '%-48s %-13s %-13s\n' 'connection.createStatement() sites' "$BEFORE_CREATE" "$AFTER_CREATE"
+printf '%-48s %-13s %-13s\n' 'SQL text with an appended value  = " +' "$BEFORE_CONCAT" "$AFTER_CONCAT"
 printf '%s\n' "-------------------------------------------------------------------------------"
 
 printf '%s\n' " BEFORE - the pattern SonarQube flags (value concatenated into the SQL text):"
+printf '%s\n' "   (paths are relative to src/main/java)"
 find "$BEFORE_REPO/src/main/java" -name '*.java' -print0 2>/dev/null \
   | xargs -0 grep -nH -- '= " +' 2>/dev/null \
-  | sed "s|^$BEFORE_REPO/||" \
+  | sed "s|^$BEFORE_REPO/src/main/java/||" \
   | sed 's/^\([^:]*:[0-9]*:\)[[:space:]]*/\1 /' \
   | sed 's/^/    /'
 printf '%s\n' " AFTER  - the same lines after the refactor (parameter bound with ?):"
 find "$AFTER_REPO/src/main/java" -name '*.java' -print0 2>/dev/null \
   | xargs -0 grep -nH -- '= " +' 2>/dev/null \
-  | sed "s|^$AFTER_REPO/||" \
+  | sed "s|^$AFTER_REPO/src/main/java/||" \
   | sed 's/^\([^:]*:[0-9]*:\)[[:space:]]*/\1 /' \
   | sed 's/^/    /'
 printf '%s\n' "    (no matches above = no runtime value is concatenated into SQL any more)"
 printf '%s\n' "-------------------------------------------------------------------------------"
-printf '%s\n' " SAY THIS: SonarQube reports these as dynamic-SQL hotspots at the lines that"
-printf '%s\n' " execute the statement - AccountAccessDao.java:90 and UserDao.java:288 in the"
-printf '%s\n' " pre-fix build. Both values were ints, so they were never exploitable through"
-printf '%s\n' " those signatures; the fix removes the pattern (and the risk of it becoming"
-printf '%s\n' " reachable) by binding the parameter instead of building the SQL string."
-printf '%s\n' " The runtime half of the evidence is in reports/SIDE-BY-SIDE.txt section 2 -"
-printf '%s\n' " run bash tools/leakdemo/run-leak-demo.sh to regenerate it."
+printf '%s\n' " WHAT CHANGED"
+printf ' BEFORE FIX : %s queries were built with createStatement(); %s of them appended\n' \
+  "$BEFORE_CREATE" "$BEFORE_CONCAT"
+printf '%s\n' "              a runtime value into the SQL text (no ? placeholder)."
+printf ' AFTER FIX  : %s concatenated SQL left; those queries now use multi-line SQL\n' \
+  "$AFTER_CONCAT"
+printf '%s\n' "              with ? placeholders, so no value reaches the SQL text."
+printf '%s\n' " Runtime    : SIDE-BY-SIDE.txt section 2 - literal-text executions go to 0"
+printf '%s\n' "              (regenerate: bash tools/leakdemo/run-leak-demo.sh)"
 rule
