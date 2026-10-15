@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
@@ -48,6 +49,11 @@ public final class JdbcTracker {
 
     public static final String[] STATEMENT_KINDS = {STATEMENT, PREPARED, CALLABLE};
 
+    /** A prepared statement: the SQL has placeholders and the values travel separately. */
+    public static final String MODE_PREPARED = "prepared";
+    /** A plain Statement: the SQL text is sent as-is, so any value in it is part of the statement. */
+    public static final String MODE_LITERAL_TEXT = "literal-text";
+
     private static final class Entry {
         final String kind;
         final String site;
@@ -67,6 +73,16 @@ public final class JdbcTracker {
     private final Map<Integer, Entry> open = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> createdCounts = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> closedCounts = new ConcurrentHashMap<>();
+    /** How the SQL reached the server: MODE_PREPARED or MODE_LITERAL_TEXT. */
+    private final Map<String, AtomicInteger> executionsByMode = new ConcurrentHashMap<>();
+    /** Executions of literal (non-parameterized) SQL, per DAO method. */
+    private final Map<String, AtomicInteger> literalExecutionsBySite = new ConcurrentHashMap<>();
+    /** Executions of prepared statements, per DAO method. */
+    private final Map<String, AtomicInteger> preparedExecutionsBySite = new ConcurrentHashMap<>();
+    /** Distinct SQL texts sent as-is, per DAO method - shows whether values sit inside the SQL. */
+    private final Map<String, Set<String>> literalSqlBySite = new ConcurrentHashMap<>();
+    /** Distinct SQL texts of prepared statements (with placeholders), per DAO method. */
+    private final Map<String, Set<String>> preparedSqlBySite = new ConcurrentHashMap<>();
     /** Guards against wrapping the same ResultSet twice (execute() then getResultSet()). */
     private final Map<Object, Object> resultSetProxies = Collections.synchronizedMap(new IdentityHashMap<>());
     private final AtomicInteger sequence = new AtomicInteger();
@@ -236,6 +252,79 @@ public final class JdbcTracker {
         return n == null ? 0 : n.get();
     }
 
+    // ------------------------------------------------------- SQL safety counters
+
+    /** Number of statement executions, by how the SQL reached the server. */
+    public int executions(String mode) {
+        return of(executionsByMode, mode);
+    }
+
+    /** DAO methods that executed SQL whose text carries the values, biggest first. */
+    public Map<String, Integer> literalExecutionsBySite() {
+        Map<String, Integer> bySite = new ConcurrentHashMap<>();
+        literalExecutionsBySite.forEach((site, n) -> bySite.put(site, n.get()));
+        return sorted(bySite);
+    }
+
+    /** DAO methods that executed SQL, by total executions (prepared + literal), biggest first. */
+    public Map<String, Integer> sqlSites() {
+        Map<String, Integer> totals = new ConcurrentHashMap<>();
+        preparedExecutionsBySite.forEach((site, n) -> totals.merge(site, n.get(), Integer::sum));
+        literalExecutionsBySite.forEach((site, n) -> totals.merge(site, n.get(), Integer::sum));
+        return sorted(totals);
+    }
+
+    public int literalExecutionsOf(String site) {
+        return of(literalExecutionsBySite, site);
+    }
+
+    public int preparedExecutionsOf(String site) {
+        return of(preparedExecutionsBySite, site);
+    }
+
+    /** The distinct SQL texts a DAO method sent as literal text, alphabetically. */
+    public List<String> literalSql(String site) {
+        return textsOf(literalSqlBySite, site);
+    }
+
+    /** The distinct SQL texts of the prepared statements a DAO method used, alphabetically. */
+    public List<String> preparedSql(String site) {
+        return textsOf(preparedSqlBySite, site);
+    }
+
+    private static List<String> textsOf(Map<String, Set<String>> map, String site) {
+        Set<String> texts = map.get(site);
+        if (texts == null) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(texts);
+        Collections.sort(out);
+        return out;
+    }
+
+    private static String normalizeSql(String sql) {
+        return sql.replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * Records one statement execution.
+     *
+     * @param site       the DAO method that ran the statement
+     * @param literalSql the SQL text when the statement was executed with the SQL as an
+     *                   argument (a plain Statement), or null when the statement was
+     *                   prepared with placeholders and the values were bound separately
+     */
+    private void recordExecution(String site, String literalSql) {
+        bump(executionsByMode, literalSql == null ? MODE_PREPARED : MODE_LITERAL_TEXT);
+        if (literalSql == null) {
+            bump(preparedExecutionsBySite, site);
+        } else {
+            bump(literalExecutionsBySite, site);
+            literalSqlBySite.computeIfAbsent(site, k -> ConcurrentHashMap.newKeySet())
+                    .add(normalizeSql(literalSql));
+        }
+    }
+
     private static void bump(Map<String, AtomicInteger> map, String key) {
         map.computeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();
     }
@@ -244,6 +333,10 @@ public final class JdbcTracker {
         int id = sequence.incrementAndGet();
         open.put(id, new Entry(kind, site, sql));
         bump(createdCounts, kind);
+        if (sql != null) {
+            preparedSqlBySite.computeIfAbsent(site, k -> ConcurrentHashMap.newKeySet())
+                    .add(normalizeSql(sql));
+        }
         return id;
     }
 
@@ -289,14 +382,15 @@ public final class JdbcTracker {
     }
 
     private Object wrapStatement(Statement real, String kind, String sql, Object connectionProxy) {
-        int id = register(kind, callerSite(), sql);
+        String site = callerSite();
+        int id = register(kind, site, sql);
         Class<?> iface = switch (kind) {
             case PREPARED -> PreparedStatement.class;
             case CALLABLE -> CallableStatement.class;
             default -> Statement.class;
         };
         return Proxy.newProxyInstance(loader, new Class<?>[]{iface},
-                new StatementHandler(real, kind, id, connectionProxy));
+                new StatementHandler(real, kind, id, connectionProxy, site));
     }
 
     private Object wrapResultSet(ResultSet real, Object statementProxy) {
@@ -352,20 +446,34 @@ public final class JdbcTracker {
         private final String kind;
         private final int id;
         private final Object connectionProxy;
+        private final String site;
 
-        StatementHandler(Statement real, String kind, int id, Object connectionProxy) {
+        StatementHandler(Statement real, String kind, int id, Object connectionProxy, String site) {
             this.real = real;
             this.kind = kind;
             this.id = id;
             this.connectionProxy = connectionProxy;
+            this.site = site;
         }
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             switch (method.getName()) {
-                case "executeQuery": {
-                    Object rs = call(real, method, args);
-                    return rs == null ? null : wrapResultSet((ResultSet) rs, proxy);
+                // A plain Statement is executed with the SQL as an argument, so the SQL
+                // text carries every value. A prepared statement is executed without an
+                // argument - the values were bound separately. That difference is what
+                // makes the SonarQube dynamic-SQL finding visible at runtime.
+                case "executeQuery":
+                case "execute":
+                case "executeUpdate":
+                case "executeLargeUpdate": {
+                    String literalSql = (args != null && args.length > 0 && args[0] instanceof String s) ? s : null;
+                    recordExecution(site, literalSql);
+                    Object result = call(real, method, args);
+                    if (result instanceof ResultSet rs) {
+                        return wrapResultSet(rs, proxy);
+                    }
+                    return result;
                 }
                 case "getResultSet": {
                     Object rs = call(real, method, args);

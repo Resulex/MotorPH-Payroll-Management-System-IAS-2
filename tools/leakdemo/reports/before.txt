@@ -41,6 +41,30 @@ SQL LEFT OPEN (first 5 of 400)
     SELECT * FROM payroll_summary_report_view WHERE `Month` = ?
     SELECT * FROM payroll_summary_report_view WHERE `Month` = ?
 ------------------------------------------------------------------------------
+SQL EXECUTION MODES (how the SQL reached MySQL, workload methods only)
+------------------------------------------------------------------------------
+  prepared statement, parameters bound (?)                     500
+  literal SQL text, values inside the statement                200
+------------------------------------------------------------------------------
+SQL TEXT SENT TO MYSQL (distinct statements per DAO method, workload only)
+------------------------------------------------------------------------------
+  dao.AccountAccessDao.login                  100 literal, 100 prepared
+     literal  SELECT CONCAT( ...  WHERE employee_id = 10001
+     prepared SELECT employe ... ee_id = ? AND password = ?
+  dao.AccountAccessDao.getAccountEmail        100 prepared
+     prepared SELECT email F ... ials WHERE employee_id = ?
+  dao.EmployeeDao.loadAttendanceList          100 prepared
+     prepared SELECT a.*, e. ... d = ? ORDER BY a.date DESC
+  dao.HRPersonnelDao.loadSummaryReport        100 prepared
+     prepared SELECT * FROM  ... ort_view WHERE `Month` = ?
+  dao.UserDao.getRoleName                     100 prepared
+     prepared SELECT r.role_ ... d WHERE uc.employee_id = ?
+  dao.UserDao.getUserInfo                     100 literal
+     literal  SELECT * FROM  ...  WHERE employee_id = 10001
+------------------------------------------------------------------------------
+  literal  = the SQL text was sent as-is; values sit inside the statement
+  prepared = the SQL text has '?' placeholders; values are bound parameters
+------------------------------------------------------------------------------
 METHOD EXECUTION HEALTH (a mismatch here invalidates the comparison)
 ------------------------------------------------------------------------------
   AccountAccessDao.login                                      100/100 ok
@@ -55,15 +79,17 @@ MYSQL SERVER-SIDE VIEW (what the database itself still holds)
                                              START           MID           END
   prepared_statements_instances                  0           200           400
   Prepared_stmt_count                            0           200           400
-  UNCLOSED (prepare - close)                  2800          3000          3200
-  Com_stmt_prepare                            7700          7950          8200
-  Com_stmt_close                              4900          4950          5000
+  UNCLOSED (prepare - close)                  4800          5000          5200
+  Com_stmt_prepare                           13700         13950         14200
+  Com_stmt_close                              8900          8950          9000
 ------------------------------------------------------------------------------
 VERDICT
 ------------------------------------------------------------------------------
   LEAK - 1000 statements and 600 result sets were never
   closed. Each one keeps its server-side cursor/buffers alive until the JVM
-  garbage collects it, which is the SonarQube S2095 defect this refactor fixes.
+  garbage collects it - the SonarQube S2095 defect this refactor fixes.
+  SQL SAFETY - 200 execution(s) sent the SQL as literal text with
+  the value inside the statement - the dynamic-SQL hotspot SonarQube flags.
 ------------------------------------------------------------------------------
 MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)
 RESOURCE|Statement|600|0|600
@@ -71,4 +97,6 @@ RESOURCE|PreparedStatement|500|100|400
 RESOURCE|CallableStatement|0|0|0
 RESOURCE|ResultSets|700|100|600
 RESOURCE|Statements (all)|1100|100|1000
+COUNTER|prepared statement executions|500
+COUNTER|literal SQL text executions|200
 ==============================================================================

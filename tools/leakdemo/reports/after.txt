@@ -26,6 +26,30 @@ SQL LEFT OPEN (first 0 of 0)
 ------------------------------------------------------------------------------
   none
 ------------------------------------------------------------------------------
+SQL EXECUTION MODES (how the SQL reached MySQL, workload methods only)
+------------------------------------------------------------------------------
+  prepared statement, parameters bound (?)                     700
+  literal SQL text, values inside the statement                  0
+------------------------------------------------------------------------------
+SQL TEXT SENT TO MYSQL (distinct statements per DAO method, workload only)
+------------------------------------------------------------------------------
+  dao.AccountAccessDao.login                  200 prepared
+     prepared SELECT CONCAT( ... n_id WHERE employee_id = ?
+     prepared SELECT employe ... ee_id = ? AND password = ?
+  dao.AccountAccessDao.getAccountEmail        100 prepared
+     prepared SELECT email F ... ials WHERE employee_id = ?
+  dao.EmployeeDao.loadAttendanceList          100 prepared
+     prepared SELECT a.*, e. ... d = ? ORDER BY a.date DESC
+  dao.HRPersonnelDao.loadSummaryReport        100 prepared
+     prepared SELECT * FROM  ... ort_view WHERE `Month` = ?
+  dao.UserDao.getRoleName                     100 prepared
+     prepared SELECT r.role_ ... d WHERE uc.employee_id = ?
+  dao.UserDao.getUserInfo                     100 prepared
+     prepared SELECT * FROM  ... view WHERE employee_id = ?
+------------------------------------------------------------------------------
+  literal  = the SQL text was sent as-is; values sit inside the statement
+  prepared = the SQL text has '?' placeholders; values are bound parameters
+------------------------------------------------------------------------------
 METHOD EXECUTION HEALTH (a mismatch here invalidates the comparison)
 ------------------------------------------------------------------------------
   AccountAccessDao.login                                      100/100 ok
@@ -40,15 +64,17 @@ MYSQL SERVER-SIDE VIEW (what the database itself still holds)
                                              START           MID           END
   prepared_statements_instances                  0             0             0
   Prepared_stmt_count                            0             0             0
-  UNCLOSED (prepare - close)                  3200          3200          3200
-  Com_stmt_prepare                            8200          8550          8900
-  Com_stmt_close                              5000          5350          5700
+  UNCLOSED (prepare - close)                  5200          5200          5200
+  Com_stmt_prepare                           14200         14550         14900
+  Com_stmt_close                              9000          9350          9700
 ------------------------------------------------------------------------------
 VERDICT
 ------------------------------------------------------------------------------
   FIXED - 0 statements and 0 result sets left unclosed.
   Every JDBC object opened by the DAO layer was released deterministically
   (try-with-resources), instead of waiting for garbage collection.
+  SQL SAFETY - 0 executions sent literal SQL text: all SQL used prepared
+  statements with bound parameters instead of string concatenation.
 ------------------------------------------------------------------------------
 MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)
 RESOURCE|Statement|0|0|0
@@ -56,4 +82,6 @@ RESOURCE|PreparedStatement|700|700|0
 RESOURCE|CallableStatement|0|0|0
 RESOURCE|ResultSets|700|700|0
 RESOURCE|Statements (all)|700|700|0
+COUNTER|prepared statement executions|700
+COUNTER|literal SQL text executions|0
 ==============================================================================

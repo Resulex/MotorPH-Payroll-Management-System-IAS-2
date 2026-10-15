@@ -1,11 +1,14 @@
 ==============================================================================
- BEFORE vs AFTER - JDBC PREPAREDSTATEMENT / RESULTSET LEAK (commit 5785fa0)
+ BEFORE vs AFTER - JDBC RESOURCE + SQL SAFETY (commit 5785fa0)
 ==============================================================================
  BEFORE build : /Users/alexresu/OOPMotorPh_Payroll_System
  AFTER  build : /Users/alexresu/MotorPH-Payroll-Management-System-IAS-2
  Iterations   : 100 per DAO call
 
+1. UNCLOSED JDBC OBJECTS (measured at runtime, one harness, two builds)
+------------------------------------------------------------------------------
 RESOURCE                 BEFORE (c | cl | LEAK)   AFTER (c | cl | LEAK)   
+   c = created   cl = closed   LEAK = never closed (still open)
 ------------------------------------------------------------------------------
 Statement                600 | 0 | 600            0 | 0 | 0               
 PreparedStatement        500 | 100 | 400          700 | 700 | 0           
@@ -15,9 +18,28 @@ Statements (all)         1100 | 100 | 1000        700 | 700 | 0
 
  Result sets leaked : BEFORE 600  ->  AFTER 0
  Statements leaked  : BEFORE 1000  ->  AFTER 0
-
+------------------------------------------------------------------------------
  NOTE: 'created' differs between builds by design - the refactor also replaced
- Statement (string-built SQL) with PreparedStatement (bound parameters), so the
- post-fix build opens more prepared statements and zero raw statements. The
- metric that matters is LEAKED, which goes to zero.
+ Statement (string-built SQL) with PreparedStatement (bound parameters), so
+ the post-fix build opens more prepared statements and zero raw statements.
+ The metric that matters is LEAKED, which goes to zero.
+
+2. HOW THE SQL WAS SENT (measured at runtime, same workload)
+------------------------------------------------------------------------------
+SQL EXECUTION MODE                   BEFORE       AFTER       
+------------------------------------------------------------------------------
+prepared statement executions        500          700         
+literal SQL text executions          200          0           
+------------------------------------------------------------------------------
+ A literal-text execution means the SQL string itself was handed to MySQL, so
+ any value in it is part of the statement. That is the SonarQube dynamic-SQL
+ finding: after the fix the SQL text contains '?', so no value is inline.
+
+3. STATIC CHECK OVER BOTH REPOS (grep, no database involved)
+------------------------------------------------------------------------------
+METRIC (whole src/main/java)                   BEFORE         AFTER         
+connection.createStatement() sites             29             0             
+SQL text with an appended value  = " +         2              0             
+------------------------------------------------------------------------------
+ Run tools/leakdemo/check-sql-safety.sh for the two findings with file:line.
 ==============================================================================

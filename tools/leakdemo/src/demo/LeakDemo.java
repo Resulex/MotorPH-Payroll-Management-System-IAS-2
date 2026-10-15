@@ -135,6 +135,8 @@ public final class LeakDemo {
 
         int stmtLeaked = tracker.leakedOf(JdbcTracker.STATEMENT_KINDS);
         int rsLeaked = tracker.leakedOf(JdbcTracker.RESULTSET);
+        int preparedExecs = tracker.executions(JdbcTracker.MODE_PREPARED);
+        int literalExecs = tracker.executions(JdbcTracker.MODE_LITERAL_TEXT);
 
         rule(sb, '=');
         line(sb, "MOTORPH PAYROLL - JDBC PREPAREDSTATEMENT / RESULTSET RESOURCE LEAK DEMO");
@@ -187,6 +189,44 @@ public final class LeakDemo {
         }
         rule(sb, '-');
 
+        line(sb, "SQL EXECUTION MODES (how the SQL reached MySQL, workload methods only)");
+        rule(sb, '-');
+        line(sb, pad("  prepared statement, parameters bound (?)", 54) + lpad(String.valueOf(preparedExecs), 12));
+        line(sb, pad("  literal SQL text, values inside the statement", 54) + lpad(String.valueOf(literalExecs), 12));
+        rule(sb, '-');
+        line(sb, "SQL TEXT SENT TO MYSQL (distinct statements per DAO method, workload only)");
+        rule(sb, '-');
+        Map<String, Integer> sqlSites = tracker.sqlSites();
+        if (sqlSites.isEmpty()) {
+            line(sb, "  none");
+        } else {
+            for (String site : sqlSites.keySet()) {
+                int literal = tracker.literalExecutionsOf(site);
+                int prepared = tracker.preparedExecutionsOf(site);
+                StringBuilder counts = new StringBuilder();
+                if (literal > 0) {
+                    counts.append(literal).append(" literal");
+                }
+                if (literal > 0 && prepared > 0) {
+                    counts.append(", ");
+                }
+                if (prepared > 0) {
+                    counts.append(prepared).append(" prepared");
+                }
+                line(sb, "  " + pad(site, 44) + counts);
+                for (String text : tracker.literalSql(site)) {
+                    line(sb, "     " + pad("literal", 9) + shorten(text, 14, 26));
+                }
+                for (String text : tracker.preparedSql(site)) {
+                    line(sb, "     " + pad("prepared", 9) + shorten(text, 14, 26));
+                }
+            }
+        }
+        rule(sb, '-');
+        line(sb, "  literal  = the SQL text was sent as-is; values sit inside the statement");
+        line(sb, "  prepared = the SQL text has '?' placeholders; values are bound parameters");
+        rule(sb, '-');
+
         line(sb, "METHOD EXECUTION HEALTH (a mismatch here invalidates the comparison)");
         rule(sb, '-');
         for (String name : WORKLOAD) {
@@ -224,7 +264,14 @@ public final class LeakDemo {
         } else {
             line(sb, "  LEAK - " + stmtLeaked + " statements and " + rsLeaked + " result sets were never");
             line(sb, "  closed. Each one keeps its server-side cursor/buffers alive until the JVM");
-            line(sb, "  garbage collects it, which is the SonarQube S2095 defect this refactor fixes.");
+            line(sb, "  garbage collects it - the SonarQube S2095 defect this refactor fixes.");
+        }
+        if (literalExecs > 0) {
+            line(sb, "  SQL SAFETY - " + literalExecs + " execution(s) sent the SQL as literal text with");
+            line(sb, "  the value inside the statement - the dynamic-SQL hotspot SonarQube flags.");
+        } else {
+            line(sb, "  SQL SAFETY - 0 executions sent literal SQL text: all SQL used prepared");
+            line(sb, "  statements with bound parameters instead of string concatenation.");
         }
         rule(sb, '-');
         line(sb, "MACHINE-READABLE SUMMARY (consumed by run-leak-demo.sh)");
@@ -234,11 +281,25 @@ public final class LeakDemo {
         machine(sb, "ResultSets", tracker.createdOf(JdbcTracker.RESULTSET),
                 tracker.closedOf(JdbcTracker.RESULTSET), rsLeaked);
         machine(sb, "Statements (all)", stmtSum(tracker, true), stmtSum(tracker, false), stmtLeaked);
+        counter(sb, "prepared statement executions", preparedExecs);
+        counter(sb, "literal SQL text executions", literalExecs);
         rule(sb, '=');
     }
 
     private static void machine(StringBuilder sb, String kind, int created, int closed, int leaked) {
         line(sb, "RESOURCE|" + kind + "|" + created + "|" + closed + "|" + leaked);
+    }
+
+    private static void counter(StringBuilder sb, String label, int value) {
+        line(sb, "COUNTER|" + label + "|" + value);
+    }
+
+    /** Fits a long SQL statement into the report: keeps the head and the tail (the WHERE clause). */
+    private static String shorten(String sql, int head, int tail) {
+        if (sql.length() <= head + tail + 5) {
+            return sql;
+        }
+        return sql.substring(0, head) + " ... " + sql.substring(sql.length() - tail);
     }
 
     private static void appendSites(StringBuilder sb, Map<String, Integer> sites) {

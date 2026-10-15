@@ -114,17 +114,33 @@ run_one() {   # label repo_dir
 run_one before "$BEFORE_REPO"
 run_one after  "$AFTER_REPO"
 
-# ----------------------------------------------------------------- 4. side by side
+# ----------------------------------------------------------------- 4. static metrics
+# Whole-repo counts straight out of the source, no database involved. These are the
+# same numbers a reviewer checks against the SonarQube findings.
+count_java() {   # repo pattern
+  find "$1/src/main/java" -name '*.java' -print0 2>/dev/null \
+    | xargs -0 grep -h -- "$2" 2>/dev/null | wc -l | tr -d ' '
+}
+
+BEFORE_CREATE="$(count_java "$BEFORE_REPO" 'createStatement(')"
+AFTER_CREATE="$(count_java "$AFTER_REPO" 'createStatement(')"
+BEFORE_CONCAT="$(count_java "$BEFORE_REPO" '= " +')"
+AFTER_CONCAT="$(count_java "$AFTER_REPO" '= " +')"
+
+# ----------------------------------------------------------------- 5. side by side
 SIDE="$REPORTS/SIDE-BY-SIDE.txt"
 {
   printf '%s\n' "=============================================================================="
-  printf '%s\n' " BEFORE vs AFTER - JDBC PREPAREDSTATEMENT / RESULTSET LEAK (commit 5785fa0)"
+  printf '%s\n' " BEFORE vs AFTER - JDBC RESOURCE + SQL SAFETY (commit 5785fa0)"
   printf '%s\n' "=============================================================================="
   printf ' BEFORE build : %s\n' "$BEFORE_REPO"
   printf ' AFTER  build : %s\n' "$AFTER_REPO"
   printf ' Iterations   : %s per DAO call\n' "$ITERATIONS"
   printf '\n'
+  printf '%s\n' "1. UNCLOSED JDBC OBJECTS (measured at runtime, one harness, two builds)"
+  printf '%s\n' "------------------------------------------------------------------------------"
   printf '%-24s %-24s %-24s\n' 'RESOURCE' 'BEFORE (c | cl | LEAK)' 'AFTER (c | cl | LEAK)'
+  printf '%s\n' "   c = created   cl = closed   LEAK = never closed (still open)"
   printf '%s\n' "------------------------------------------------------------------------------"
   awk -F'|' '
     FNR==NR && $1=="RESOURCE" { before[$2] = $3" | "$4" | "$5; next }
@@ -136,11 +152,32 @@ SIDE="$REPORTS/SIDE-BY-SIDE.txt"
     $1=="RESOURCE" && $2=="Statements (all)" { printf " Statements leaked  : BEFORE %s  ->  AFTER %s\n", before["Statements (all)"], $5 }
     $1=="RESOURCE" && $2=="ResultSets"       { printf " Result sets leaked : BEFORE %s  ->  AFTER %s\n", before["ResultSets"], $5 }
   ' "$REPORTS/before.txt" "$REPORTS/after.txt"
-  printf '\n'
+  printf '%s\n' "------------------------------------------------------------------------------"
   printf '%s\n' " NOTE: 'created' differs between builds by design - the refactor also replaced"
-  printf '%s\n' " Statement (string-built SQL) with PreparedStatement (bound parameters), so the"
-  printf '%s\n' " post-fix build opens more prepared statements and zero raw statements. The"
-  printf '%s\n' " metric that matters is LEAKED, which goes to zero."
+  printf '%s\n' " Statement (string-built SQL) with PreparedStatement (bound parameters), so"
+  printf '%s\n' " the post-fix build opens more prepared statements and zero raw statements."
+  printf '%s\n' " The metric that matters is LEAKED, which goes to zero."
+  printf '\n'
+  printf '%s\n' "2. HOW THE SQL WAS SENT (measured at runtime, same workload)"
+  printf '%s\n' "------------------------------------------------------------------------------"
+  printf '%-36s %-12s %-12s\n' 'SQL EXECUTION MODE' 'BEFORE' 'AFTER'
+  printf '%s\n' "------------------------------------------------------------------------------"
+  awk -F'|' '
+    FNR==NR { if ($1=="COUNTER") before[$2]=$3; next }
+    $1=="COUNTER" { printf "%-36s %-12s %-12s\n", $2, before[$2], $3 }
+  ' "$REPORTS/before.txt" "$REPORTS/after.txt"
+  printf '%s\n' "------------------------------------------------------------------------------"
+  printf '%s\n' " A literal-text execution means the SQL string itself was handed to MySQL, so"
+  printf '%s\n' " any value in it is part of the statement. That is the SonarQube dynamic-SQL"
+  printf '%s\n' " finding: after the fix the SQL text contains '?', so no value is inline."
+  printf '\n'
+  printf '%s\n' "3. STATIC CHECK OVER BOTH REPOS (grep, no database involved)"
+  printf '%s\n' "------------------------------------------------------------------------------"
+  printf '%-46s %-14s %-14s\n' 'METRIC (whole src/main/java)' 'BEFORE' 'AFTER'
+  printf '%-46s %-14s %-14s\n' 'connection.createStatement() sites' "$BEFORE_CREATE" "$AFTER_CREATE"
+  printf '%-46s %-14s %-14s\n' 'SQL text with an appended value  = " +' "$BEFORE_CONCAT" "$AFTER_CONCAT"
+  printf '%s\n' "------------------------------------------------------------------------------"
+  printf '%s\n' " Run tools/leakdemo/check-sql-safety.sh for the two findings with file:line."
   printf '%s\n' "=============================================================================="
 } > "$SIDE"
 
@@ -154,3 +191,4 @@ say "  $SIDE"
 say "raw process output (includes the leaked-statement error noise of the pre-fix build):"
 say "  $REPORTS/before.raw.log"
 say "  $REPORTS/after.raw.log"
+say "instant static check (no database needed): bash tools/leakdemo/check-sql-safety.sh"

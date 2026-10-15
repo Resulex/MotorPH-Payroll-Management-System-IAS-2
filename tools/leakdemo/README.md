@@ -16,6 +16,27 @@ many were explicitly closed:
 Nothing in either repository's production code is modified. All instrumentation
 lives in this folder.
 
+## Quick start (copy-paste)
+
+Run everything from the root of the `MotorPH-Payroll-Management-System-IAS-2`
+repository:
+
+```bash
+# 0. instant static check - no database, no build, about a second
+bash tools/leakdemo/check-sql-safety.sh
+
+# 1. the full before/after evidence (builds both repos, runs both, writes reports)
+bash tools/leakdemo/run-leak-demo.sh
+
+# 2. the two reports, and the comparison to present
+cat tools/leakdemo/reports/SIDE-BY-SIDE.txt
+less tools/leakdemo/reports/before.txt
+less tools/leakdemo/reports/after.txt
+```
+
+If MySQL is not running, step 1 cannot measure anything - use step 0 and the
+committed reports under `reports/` instead.
+
 ## Why the numbers can be trusted
 
 * Every `Statement` / `PreparedStatement` / `ResultSet` handed to the DAO layer
@@ -42,11 +63,13 @@ lives in this folder.
 ## Run it
 
 ```bash
-tools/leakdemo/run-leak-demo.sh
+bash tools/leakdemo/run-leak-demo.sh       # full evidence: builds, runs, compares
+bash tools/leakdemo/check-sql-safety.sh    # static check only: instant, no database
 ```
 
 Requirements: MySQL on `localhost:3306` with the `payrollsystem_db_aoop` dump
 restored, Maven, and a JDK new enough to read class files compiled for Java 21.
+`check-sql-safety.sh` needs none of that - it only reads source files.
 
 Environment overrides:
 
@@ -96,6 +119,47 @@ Statements (all)         1100 | 100 | 1000        700 | 700 | 0
   `PreparedStatement`, so the post-fix build opens more prepared statements and
   zero raw statements. The metric that matters is `LEAKED`.
 
+### SQL built by concatenation (the second defect class)
+
+`SIDE-BY-SIDE.txt` section 2 answers the SonarQube finding *"Make sure using a
+dynamically formatted SQL query is safe here"* at `AccountAccessDao.java:90`
+and `UserDao.java:288`. Same workload, same call sites, only the SQL differs:
+
+```
+BEFORE   dao.AccountAccessDao.login         100 literal, 100 prepared
+            literal  SELECT CONCAT( ...  WHERE employee_id = 10001
+            prepared SELECT employe ... ee_id = ? AND password = ?
+         dao.UserDao.getUserInfo            100 literal
+            literal  SELECT * FROM  ...  WHERE employee_id = 10001
+
+AFTER    dao.AccountAccessDao.login         200 prepared
+            prepared SELECT CONCAT( ... n_id WHERE employee_id = ?
+            prepared SELECT employe ... ee_id = ? AND password = ?
+         dao.UserDao.getUserInfo            100 prepared
+            prepared SELECT * FROM  ... view WHERE employee_id = ?
+```
+
+* `literal` = the SQL string itself was handed to MySQL (a plain `Statement`),
+  so every value inside it is part of the statement.
+* `prepared` = the SQL text contains `?` and the values travelled as bound
+  parameters.
+* Runtime totals: **200 -> 0 literal-text executions**, while the total number
+  of executions stays at 700 in both builds - the same SQL work, delivered
+  differently.
+* Whole-repo static check (section 3 / `check-sql-safety.sh`): **29 -> 0**
+  `connection.createStatement()` sites and **2 -> 0** values concatenated into
+  SQL text.
+
+**Say this, and not more than this.** Both concatenated values were `int`s
+(`employeeNumber`, `employeeId`), so those two sinks were never reachable with a
+payload: SonarQube's message is a *hotspot* asking for a review decision, not a
+confirmed injection. The claim is "the pattern is gone and the value is now a
+bound parameter", not "we stopped an attack". Note also that
+`AccountAccessDaoTest.testLoginSqlInjectionPayloadFails` and
+`UserDaoTest.authenticateSqlInjectionPayloadFails` pass on **both** builds (the
+old `login()` already bound its two `?`s and `authenticate()` is byte-identical
+in both builds) - they are regression guards, not evidence of this fix.
+
 ### Server-side confirmation (MySQL's own view)
 
 The harness forces `useServerPrepStmts=true` so MySQL can report the leak too.
@@ -125,6 +189,7 @@ times in `after.raw.log`.
 ```
 tools/leakdemo/
   run-leak-demo.sh              builds both repos, compiles the harness, runs both, prints the delta
+  check-sql-safety.sh           instant static check of the dynamic-SQL finding (no database)
   src/demo/JdbcTracker.java     JDBC proxies, counting, Driver shim, callsite attribution
   src/demo/LeakDemo.java        workload, console report, server-side monitor sampling
   sql/monitor.sql               the same MySQL queries run by hand
