@@ -39,7 +39,6 @@ AFTER_CONCAT="$(count_matches "$AFTER_REPO" '= " +')"
 
 printf '%-48s %-13s %-13s\n' 'METRIC (whole src/main/java)' 'BEFORE' 'AFTER'
 printf '%s\n' "-------------------------------------------------------------------------------"
-printf '%-48s %-13s %-13s\n' 'connection.createStatement() sites' "$BEFORE_CREATE" "$AFTER_CREATE"
 printf '%-48s %-13s %-13s\n' 'SQL text with an appended value  = " +' "$BEFORE_CONCAT" "$AFTER_CONCAT"
 printf '%s\n' "-------------------------------------------------------------------------------"
 
