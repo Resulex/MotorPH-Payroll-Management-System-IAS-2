@@ -1,0 +1,7 @@
+# Copy this file to config/db.local.properties and enter your local MySQL account.
+# config/db.local.properties is gitignored. Do not commit it.
+# Environment variables override the same keys in the local file.
+# MOTORPH_DB_URL is optional. Leave it unset to use
+# jdbc:mysql://localhost:3306/payrollsystem_db_aoop
+MOTORPH_DB_USER=
+MOTORPH_DB_PASSWORD=
