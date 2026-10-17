@@ -10,14 +10,18 @@ import models.Employee;
 import models.HRPersonnel;
 import models.SystemAdministrator;
 import models.User;
+import dao.AuditLogDao;
 import dao.SystemAdministratorDao;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
@@ -414,5 +418,100 @@ public class SystemAdministratorDaoTest {
         assertTrue(dashboard.get(0) >= 1, "Value should be at least 1");
         System.out.println("Total Employees: " + dashboard.get(0));
         System.out.println("New Employees: " + dashboard.get(1));
+    }
+
+    @Test
+    public void roleChangeWritesOneAuditEvent() throws SQLException {
+        HRPersonnel employee = new HRPersonnel(10008);
+        copyStoredProfile(employee);
+        boolean result = systemAdministratorDao.updateEmployee(employee, 10001);
+        assertTrue(result);
+        assertEquals(1, countRoleChanges(10008));
+        assertEquals(Integer.valueOf(10001), roleChangeActorId(10008));
+        String details = roleChangeDetails(10008);
+        assertTrue(details.contains("previousRole=Employee"));
+        assertTrue(details.contains("newRole=HR Personnel"));
+        assertFalse(details.toLowerCase().contains("password"));
+    }
+
+    @Test
+    public void unchangedRoleWritesNoAuditEvent() throws SQLException {
+        Employee employee = new Employee(10034);
+        copyStoredProfile(employee);
+        boolean result = systemAdministratorDao.updateEmployee(employee);
+        assertTrue(result);
+        assertEquals(0, countRoleChanges(10034));
+    }
+
+    private void copyStoredProfile(User employee) throws SQLException {
+        String sql = "SELECT first_name, last_name, birthdate, phone_number, street, barangay, city, "
+                + "province, zipcode, sss_number, philhealth_number, tin_number, pagibig_number, status, "
+                + "position, basic_salary, gross_semi_monthly_rate, hourly_rate "
+                + "FROM employee_view WHERE employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, employee.getEmployeeID());
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                employee.setFirstName(result.getString("first_name"));
+                employee.setLastName(result.getString("last_name"));
+                employee.setBirthday(result.getDate("birthdate"));
+                employee.setPhoneNumber(result.getString("phone_number"));
+                Address address = new Address();
+                address.setStreet(result.getString("street"));
+                address.setBarangay(result.getString("barangay"));
+                address.setCity(result.getString("city"));
+                address.setProvince(result.getString("province"));
+                address.setZipcode(result.getString("zipcode"));
+                employee.setAddress(address);
+                employee.setSssNumber(result.getString("sss_number"));
+                employee.setPhilhealthNumber(result.getString("philhealth_number"));
+                employee.setTinNumber(result.getString("tin_number"));
+                employee.setPagibigNumber(result.getString("pagibig_number"));
+                employee.setStatus(result.getString("status"));
+                employee.setPosition(result.getString("position"));
+                Benefits benefits = new Benefits();
+                benefits.setBasicSalary(result.getDouble("basic_salary"));
+                benefits.setGrossSemiMonthlyRate(result.getDouble("gross_semi_monthly_rate"));
+                benefits.setHourlyRate(result.getDouble("hourly_rate"));
+                employee.setBenefits(benefits);
+            }
+        }
+    }
+
+    private int countRoleChanges(int subjectEmployeeId) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM audit_logs WHERE event_type = ? AND subject_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, AuditLogDao.ROLE_CHANGED);
+            statement.setInt(2, subjectEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private Integer roleChangeActorId(int subjectEmployeeId) throws SQLException {
+        String sql = "SELECT actor_employee_id FROM audit_logs WHERE event_type = ? AND subject_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, AuditLogDao.ROLE_CHANGED);
+            statement.setInt(2, subjectEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                return (Integer) result.getObject("actor_employee_id");
+            }
+        }
+    }
+
+    private String roleChangeDetails(int subjectEmployeeId) throws SQLException {
+        String sql = "SELECT details FROM audit_logs WHERE event_type = ? AND subject_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, AuditLogDao.ROLE_CHANGED);
+            statement.setInt(2, subjectEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getString("details") : null;
+            }
+        }
     }
 }

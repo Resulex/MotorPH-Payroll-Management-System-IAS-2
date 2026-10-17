@@ -12,3 +12,4 @@
 /src/main/resources/config.properties
 /config/db.local.properties
 /.env
+/config/db.local.properties

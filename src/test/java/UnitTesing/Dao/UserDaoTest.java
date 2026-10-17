@@ -8,8 +8,11 @@ import models.Employee;
 import models.HRPersonnel;
 import models.SystemAdministrator;
 import models.User;
+import dao.AuditLogDao;
 import dao.UserDao;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -176,5 +179,112 @@ public class UserDaoTest {
         List<?> users = userDao.getAllUsersWithLockStatus();
         assertNotNull(users);
         assertFalse(users.isEmpty());
+    }
+
+    @Test
+    public void successfulLoginWritesOneAuditEventWithoutPassword() throws SQLException {
+        User user = userDao.authenticate("10008", "Romualdez08");
+        assertNotNull(user);
+        assertEquals(1, countAuditEvents(AuditLogDao.LOGIN_SUCCESS, "10008"));
+        assertEquals("role=Employee", auditDetails(AuditLogDao.LOGIN_SUCCESS, "10008"));
+        assertEquals(Integer.valueOf(10008), auditSubjectId(AuditLogDao.LOGIN_SUCCESS, "10008"));
+        assertSecretAbsent("Romualdez08");
+    }
+
+    @Test
+    public void incorrectPasswordWritesOneFailureAndDoesNotLock() throws SQLException {
+        assertNull(userDao.authenticate("10008", "wrong-password"));
+        assertEquals(1, countAuditEvents(AuditLogDao.LOGIN_FAILED_BAD_PASSWORD, "10008"));
+        assertEquals(0, countAuditEvents(AuditLogDao.ACCOUNT_LOCKED, "10008"));
+        assertEquals("reason=incorrect_password", auditDetails(AuditLogDao.LOGIN_FAILED_BAD_PASSWORD, "10008"));
+        assertSecretAbsent("wrong-password");
+    }
+
+    @Test
+    public void unknownEmployeeIdWritesOneAuditEventWithoutSubject() throws SQLException {
+        assertNull(userDao.authenticate("9999999", "whatever"));
+        assertEquals(1, countAuditEvents(AuditLogDao.LOGIN_FAILED_UNKNOWN_ID, "9999999"));
+        assertNull(auditSubjectId(AuditLogDao.LOGIN_FAILED_UNKNOWN_ID, "9999999"));
+        assertEquals("reason=unknown_employee_id", auditDetails(AuditLogDao.LOGIN_FAILED_UNKNOWN_ID, "9999999"));
+        assertSecretAbsent("whatever");
+    }
+
+    @Test
+    public void alreadyLockedAccountWritesLockedEventWithoutAnotherLockout() throws SQLException {
+        userDao.incrementLoginAttempts("10008");
+        userDao.incrementLoginAttempts("10008");
+        userDao.incrementLoginAttempts("10008");
+        assertTrue(userDao.isAccountLocked("10008"));
+        assertEquals(1, countAuditEvents(AuditLogDao.ACCOUNT_LOCKED, "10008"));
+        assertNull(userDao.authenticate("10008", "Romualdez08"));
+        assertEquals(1, countAuditEvents(AuditLogDao.LOGIN_FAILED_LOCKED, "10008"));
+        assertEquals(1, countAuditEvents(AuditLogDao.ACCOUNT_LOCKED, "10008"));
+        assertEquals("reason=account_locked", auditDetails(AuditLogDao.LOGIN_FAILED_LOCKED, "10008"));
+        assertSecretAbsent("Romualdez08");
+    }
+
+    @Test
+    public void thirdIncorrectPasswordRecordsLockoutOnce() throws SQLException {
+        userDao.incrementLoginAttempts("10008");
+        userDao.incrementLoginAttempts("10008");
+        assertNull(userDao.authenticate("10008", "wrong-password"));
+        assertTrue(userDao.isAccountLocked("10008"));
+        assertEquals(1, countAuditEvents(AuditLogDao.LOGIN_FAILED_BAD_PASSWORD, "10008"));
+        assertEquals(1, countAuditEvents(AuditLogDao.ACCOUNT_LOCKED, "10008"));
+        assertEquals("reason=lockout_threshold_reached", auditDetails(AuditLogDao.ACCOUNT_LOCKED, "10008"));
+        assertSecretAbsent("wrong-password");
+    }
+
+    private int countAuditEvents(String eventType, String attemptedEmployeeId) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM audit_logs WHERE event_type = ? AND attempted_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, eventType);
+            statement.setString(2, attemptedEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private String auditDetails(String eventType, String attemptedEmployeeId) throws SQLException {
+        String sql = "SELECT details FROM audit_logs WHERE event_type = ? AND attempted_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, eventType);
+            statement.setString(2, attemptedEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getString("details") : null;
+            }
+        }
+    }
+
+    private Integer auditSubjectId(String eventType, String attemptedEmployeeId) throws SQLException {
+        String sql = "SELECT subject_employee_id FROM audit_logs WHERE event_type = ? AND attempted_employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, eventType);
+            statement.setString(2, attemptedEmployeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                return (Integer) result.getObject("subject_employee_id");
+            }
+        }
+    }
+
+    private void assertSecretAbsent(String secret) throws SQLException {
+        String sql = "SELECT event_type, attempted_employee_id, details FROM audit_logs";
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                assertFalse(containsSecret(result.getString("event_type"), secret));
+                assertFalse(containsSecret(result.getString("attempted_employee_id"), secret));
+                assertFalse(containsSecret(result.getString("details"), secret));
+            }
+        }
+    }
+
+    private boolean containsSecret(String value, String secret) {
+        return value != null && value.contains(secret);
     }
 }

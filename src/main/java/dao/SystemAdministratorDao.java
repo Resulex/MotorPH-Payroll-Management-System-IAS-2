@@ -22,15 +22,17 @@ import utils.DbConnection;
  */
 public class SystemAdministratorDao {
     private Connection connection;
+    private final AuditLogDao auditLogDao;
 
     // Constructor with custom connection
     public SystemAdministratorDao(Connection connection) {
         this.connection = connection;
+        this.auditLogDao = new AuditLogDao(connection);
     }
 
     // Constructor with default connection
     public SystemAdministratorDao() {
-        this.connection = DbConnection.getConnection();
+        this(DbConnection.getConnection());
     }
     
     // Add a new employee to the system.
@@ -44,8 +46,22 @@ public class SystemAdministratorDao {
         }
     }
     
-    // Update an existing employee in the system
+    // Update an existing employee in the system.
+    // Kept for existing callers and tests. No acting administrator is available on this path.
     public boolean updateEmployee(User employee) {
+        return updateEmployee(employee, null);
+    }
+
+    /**
+     * Updates an employee. ROLE_CHANGED is inserted on this DAO's connection only when the
+     * credentials update affects a row and the role id changes.
+     *
+     * <p>The audit insert does not commit. With auto-commit enabled, the role update and the
+     * audit insert are separate commits, so they are not atomic. If the insert fails, that
+     * failure is reported and the event is not treated as persisted. The return value remains
+     * the role-update result.
+     */
+    public boolean updateEmployee(User employee, Integer actingAdminEmployeeId) {
         int rowsAffected = 0;
 
         try {
@@ -84,9 +100,23 @@ public class SystemAdministratorDao {
             }
 
             AdminPersistence.updateAddressSalaryGov(connection, employee);
-            
+
+            CurrentRole previousRole = null;
+            boolean previousRoleRead = false;
+            try {
+                previousRole = readCurrentRole(employee.getEmployeeID());
+                previousRoleRead = true;
+            } catch (SQLException readFailure) {
+                System.err.println("ROLE_CHANGED was not recorded for employee "
+                        + employee.getEmployeeID()
+                        + " because the current role could not be read. "
+                        + readFailure.getMessage());
+            }
+
             int roleId = (employee instanceof HRPersonnel) ? 2 :
                          (employee instanceof SystemAdministrator) ? 3 : 1;
+            String newRoleName = (employee instanceof HRPersonnel) ? "HR Personnel" :
+                         (employee instanceof SystemAdministrator) ? "System Admin" : "Employee";
 
             String credQuery = "UPDATE user_credentials SET role_id = ? WHERE employee_id = ?";
             try (PreparedStatement credStmt = connection.prepareStatement(credQuery)) {
@@ -95,6 +125,22 @@ public class SystemAdministratorDao {
 
                 System.out.println("Executing Role Update: " + credStmt);
                 rowsAffected = credStmt.executeUpdate();
+            }
+
+            if (rowsAffected == 1 && previousRoleRead && previousRole != null
+                    && !java.util.Objects.equals(previousRole.roleId, Integer.valueOf(roleId))) {
+                String previousRoleName = previousRole.roleName == null ? "unknown" : previousRole.roleName;
+                try {
+                    auditLogDao.insert(connection, AuditLogDao.ROLE_CHANGED, actingAdminEmployeeId,
+                            employee.getEmployeeID(), String.valueOf(employee.getEmployeeID()),
+                            "previousRole=" + previousRoleName + "; newRole=" + newRoleName);
+                } catch (SQLException auditFailure) {
+                    String cause = auditFailure.getCause() == null ? "" : " " + auditFailure.getCause().getMessage();
+                    System.err.println("Audit event was not persisted: eventType="
+                            + AuditLogDao.ROLE_CHANGED
+                            + " subjectEmployeeId=" + employee.getEmployeeID()
+                            + ". " + auditFailure.getMessage() + cause);
+                }
             }
         } catch (SQLException e) {
             System.err.println("Error updating employees table");
@@ -242,5 +288,32 @@ public class SystemAdministratorDao {
             employees.add(user);
         }
         return employees;
+    }
+
+    private CurrentRole readCurrentRole(int employeeId) throws SQLException {
+        String query = "SELECT uc.role_id, r.role_name "
+                + "FROM user_credentials uc "
+                + "LEFT JOIN roles r ON r.role_id = uc.role_id "
+                + "WHERE uc.employee_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            statement.setInt(1, employeeId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                Integer roleId = (Integer) result.getObject("role_id");
+                return new CurrentRole(roleId, result.getString("role_name"));
+            }
+        }
+    }
+
+    private static final class CurrentRole {
+        private final Integer roleId;
+        private final String roleName;
+
+        private CurrentRole(Integer roleId, String roleName) {
+            this.roleId = roleId;
+            this.roleName = roleName;
+        }
     }
 }

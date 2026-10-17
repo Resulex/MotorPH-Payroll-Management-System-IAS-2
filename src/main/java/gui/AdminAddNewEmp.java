@@ -1003,7 +1003,8 @@ public class AdminAddNewEmp extends javax.swing.JFrame {
                 if(user instanceof HRPersonnel){
                     result = hrPersonnelDao.updateEmployee((Employee) editableUser);
                 } else {
-                    result = systemAdminDao.updateEmployee(editableUser);
+                    Integer actingAdminEmployeeId = user == null ? null : Integer.valueOf(user.getEmployeeID());
+                    result = systemAdminDao.updateEmployee(editableUser, actingAdminEmployeeId);
                 }
                 addNewEmpSuccessCreatedLabel.setText(
                     "Successfully updated user. "

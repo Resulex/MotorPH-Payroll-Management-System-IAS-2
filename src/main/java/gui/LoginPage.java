@@ -170,6 +170,8 @@ public class LoginPage extends javax.swing.JFrame {
 
         // Use the new userDao to check for locked status first.
         if (userDao.isAccountLocked(employeeIdStr)) {
+            // Record this locked attempt once. authenticate is not called for this attempt.
+            userDao.recordLockedLoginAttempt(employeeIdStr);
             JOptionPane.showMessageDialog(this, "This account is locked. Please contact an administrator.", "Account Locked", JOptionPane.ERROR_MESSAGE);
             return;
         }

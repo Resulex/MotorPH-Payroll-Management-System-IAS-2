@@ -8,9 +8,14 @@ package utils;
  *
  * @author Alex Resurreccion
  */
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Properties;
 
 public class DbConnection {
 
@@ -52,5 +57,37 @@ public class DbConnection {
                 + "that db.url, db.user and db.password are configured (environment variables "
                 + "MOTORPH_DB_URL, MOTORPH_DB_USER, MOTORPH_DB_PASSWORD, or a local "
                 + AppConfig.CONFIG_FILE_NAME + " file).", cause);
+    }
+
+    private static String setting(String key, String defaultValue) {
+        String fromEnvironment = System.getenv(key);
+        if (isPresent(fromEnvironment)) {
+            return fromEnvironment.trim();
+        }
+        String fromFile = localProperties().getProperty(key);
+        if (isPresent(fromFile)) {
+            return fromFile.trim();
+        }
+        return defaultValue;
+    }
+
+    private static Properties localProperties() {
+        Properties properties = new Properties();
+        if (!Files.isRegularFile(LOCAL_PROPERTIES)) {
+            return properties;
+        }
+        try (InputStream input = Files.newInputStream(LOCAL_PROPERTIES)) {
+            properties.load(input);
+            return properties;
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Could not read config/db.local.properties. "
+                    + "Set MOTORPH_DB_USER and MOTORPH_DB_PASSWORD in the environment, "
+                    + "or recreate the file from config/db.properties.example.");
+        }
+    }
+
+    private static boolean isPresent(String value) {
+        return value != null && !value.isBlank();
     }
 }

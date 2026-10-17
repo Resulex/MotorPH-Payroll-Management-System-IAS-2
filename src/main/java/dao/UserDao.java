@@ -22,16 +22,17 @@ import java.util.List;
  */
 public class UserDao {
     private Connection conn;
+    private final AuditLogDao auditLogDao;
 
     // Kept your original constructor
     public UserDao(Connection conn) {
         this.conn = conn;
+        this.auditLogDao = new AuditLogDao(conn);
     }
 
     // Kept your original constructor
     public UserDao() {
-        // Assuming you have a DbConnection class for getting the connection
-        this.conn = DbConnection.getConnection();
+        this(DbConnection.getConnection());
     }
 
     /**
@@ -43,6 +44,7 @@ public class UserDao {
     public User authenticate(String employeeId, String password) {
         if (isAccountLocked(employeeId)) {
             System.out.println("Authentication failed: Account is locked for employee ID " + employeeId);
+            recordLockedLoginAttempt(employeeId);
             return null;
         }
 
@@ -80,14 +82,20 @@ public class UserDao {
                                 System.err.println("Unknown role encountered: " + roleName);
                                 return null;
                         }
+                        insertAuditEvent(AuditLogDao.LOGIN_SUCCESS, null, user.getEmployeeID(),
+                                employeeId, "role=" + roleName);
                         return user; // Return the created Employee, HR, or Admin object
                     } else {
                         // Password was incorrect. Increment login attempts.
                         incrementLoginAttempts(employeeId);
+                        insertAuditEvent(AuditLogDao.LOGIN_FAILED_BAD_PASSWORD, null,
+                                knownSubjectId(employeeId), employeeId, "reason=incorrect_password");
                         return null;
                     }
                 } else {
                     // Employee ID not found in the database.
+                    insertAuditEvent(AuditLogDao.LOGIN_FAILED_UNKNOWN_ID, null, null,
+                            employeeId, "reason=unknown_employee_id");
                     return null;
                 }
             }
@@ -118,15 +126,29 @@ public class UserDao {
      */
     private void lockAccountIfNecessary(String employeeId) {
         if (getLoginAttempts(employeeId) >= 3) {
-            String lockSql = "UPDATE user_credentials SET is_locked = TRUE WHERE employee_id = ?";
+            String lockSql = "UPDATE user_credentials SET is_locked = TRUE WHERE employee_id = ? AND is_locked = FALSE";
             try (PreparedStatement pstmt = conn.prepareStatement(lockSql)) {
                 pstmt.setString(1, employeeId);
-                pstmt.executeUpdate();
-                System.out.println("Account locked for employee ID: " + employeeId);
+                int lockedRows = pstmt.executeUpdate();
+                if (lockedRows > 0) {
+                    System.out.println("Account locked for employee ID: " + employeeId);
+                    insertAuditEvent(AuditLogDao.ACCOUNT_LOCKED, null, knownSubjectId(employeeId),
+                            employeeId, "reason=lockout_threshold_reached");
+                }
             } catch (SQLException e) {
                  System.err.println("Error locking account: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Records one already-locked login attempt.
+     * LoginPage calls this and returns without calling authenticate, so that attempt is recorded once.
+     * A failed insert is reported and is not treated as persisted. This method does not change the lock.
+     */
+    public void recordLockedLoginAttempt(String employeeId) {
+        insertAuditEvent(AuditLogDao.LOGIN_FAILED_LOCKED, null, knownSubjectId(employeeId),
+                employeeId, "reason=account_locked");
     }
 
     /**
@@ -300,6 +322,32 @@ public class UserDao {
             e.printStackTrace();
         }
         return user; // Return the populated user object or null if no data found
+    }
+
+    /**
+     * Writes one audit row on this DAO's connection. The insert does not commit.
+     * With auto-commit enabled, the insert is a separate commit from the security statement.
+     * A failed insert is reported here and is not treated as persisted. Authentication and
+     * lockout results are unchanged when the insert fails.
+     */
+    private void insertAuditEvent(String eventType, Integer actorEmployeeId, Integer subjectEmployeeId,
+            String attemptedEmployeeId, String details) {
+        try {
+            auditLogDao.insert(conn, eventType, actorEmployeeId, subjectEmployeeId, attemptedEmployeeId, details);
+        } catch (SQLException failure) {
+            String cause = failure.getCause() == null ? "" : " " + failure.getCause().getMessage();
+            System.err.println("Audit event was not persisted: eventType=" + eventType
+                    + " attemptedEmployeeId=" + attemptedEmployeeId
+                    + ". " + failure.getMessage() + cause);
+        }
+    }
+
+    private Integer knownSubjectId(String employeeId) {
+        try {
+            return Integer.valueOf(employeeId);
+        } catch (NumberFormatException | NullPointerException e) {
+            return null;
+        }
     }
 }
 
