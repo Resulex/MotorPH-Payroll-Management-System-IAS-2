@@ -13,29 +13,35 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class DbConnection {
-    private static final String URL = "jdbc:mysql://localhost:3306/payrollsystem_db_aoop";
-    private static final String USER = "root";
-    private static final String PASS = "Alex123!!";
-    private static Connection conn = null;
 
     public static Connection getConnection() {
         try {
-            conn = DriverManager.getConnection(URL, USER, PASS);
+            Connection conn = DriverManager.getConnection(
+                    AppConfig.dbUrl(), AppConfig.dbUser(), AppConfig.dbPassword());
             System.out.println("Database connected.");
+            return conn;
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw connectionFailure(e);
         }
-        return conn;
     }
-    
-    public static Connection getConnectionWithTransaction(){
+
+    public static Connection getConnectionWithTransaction() {
         try {
-            conn = DriverManager.getConnection(URL, USER, PASS);
+            Connection conn = DriverManager.getConnection(
+                    AppConfig.dbUrl(), AppConfig.dbUser(), AppConfig.dbPassword());
             conn.setAutoCommit(false);
             System.out.println("Database connected with transaction.");
+            return conn;
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw connectionFailure(e);
         }
-        return conn;
+    }
+
+    private static IllegalStateException connectionFailure(SQLException cause) {
+        return new IllegalStateException(
+                "Could not connect to the payroll database. Check that MySQL is running and "
+                + "that db.url, db.user and db.password are configured (environment variables "
+                + "MOTORPH_DB_URL, MOTORPH_DB_USER, MOTORPH_DB_PASSWORD, or a local "
+                + AppConfig.CONFIG_FILE_NAME + " file).", cause);
     }
 }
