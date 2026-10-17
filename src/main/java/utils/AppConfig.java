@@ -18,10 +18,14 @@ import java.util.Properties;
  * <ol>
  *   <li>Java system property with the same name, e.g. {@code -Ddb.password=...}</li>
  *   <li>Environment variable listed for the key, e.g. {@code MOTORPH_DB_PASSWORD}</li>
- *   <li>{@code config.properties}, loaded from {@code -Dmotorph.config=<path>} or
- *       from the working directory ({@code ./config.properties}); the file is
- *       git-ignored and is never packaged into the build output</li>
+ *   <li>{@code config.properties}, or the legacy {@code config/db.local.properties}
+ *       used by the R-04 audit logging, loaded from {@code -Dmotorph.config=<path>}
+ *       or from the working directory; the file is git-ignored and is never
+ *       packaged into the build output</li>
  * </ol>
+ *
+ * <p>Property files may use either the canonical key ({@code db.user}) or the
+ * environment-variable name ({@code MOTORPH_DB_USER}) used by older setups.</p>
  *
  * <p>Secrets are never logged and never included in exception messages.</p>
  *
@@ -34,6 +38,9 @@ public final class AppConfig {
 
     /** File name searched in the working directory when no explicit path is given. */
     public static final String CONFIG_FILE_NAME = "config.properties";
+
+    /** Legacy local file used by the R-04 audit-logging change. */
+    private static final String LEGACY_CONFIG_FILE_NAME = "config/db.local.properties";
 
     private static final String DEFAULT_DB_URL =
             "jdbc:mysql://localhost:3306/payrollsystem_db_aoop";
@@ -49,15 +56,15 @@ public final class AppConfig {
         Properties values = new Properties();
         String explicitPath = System.getProperty(CONFIG_FILE_PROPERTY);
         boolean explicit = explicitPath != null && !explicitPath.isBlank();
-        Path path = Path.of(explicit ? explicitPath : CONFIG_FILE_NAME);
+        Path path = explicit ? Path.of(explicitPath) : findLocalConfigFile();
 
-        if (!Files.isRegularFile(path)) {
-            if (explicit) {
-                throw new IllegalStateException(
-                        "Configuration file not found: " + path.toAbsolutePath());
-            }
+        if (path == null) {
             // No local file is a valid setup: environment variables may be used instead.
             return values;
+        }
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalStateException(
+                    "Configuration file not found: " + path.toAbsolutePath());
         }
 
         try (InputStream in = Files.newInputStream(path)) {
@@ -67,6 +74,15 @@ public final class AppConfig {
                     "Unable to read configuration file: " + path.toAbsolutePath(), e);
         }
         return values;
+    }
+
+    private static Path findLocalConfigFile() {
+        Path current = Path.of(CONFIG_FILE_NAME);
+        if (Files.isRegularFile(current)) {
+            return current;
+        }
+        Path legacy = Path.of(LEGACY_CONFIG_FILE_NAME);
+        return Files.isRegularFile(legacy) ? legacy : null;
     }
 
     /**
@@ -83,6 +99,15 @@ public final class AppConfig {
         if (isBlank(value)) {
             for (String variable : environmentVariables) {
                 value = System.getenv(variable);
+                if (!isBlank(value)) {
+                    break;
+                }
+            }
+        }
+        if (isBlank(value)) {
+            // Older setups store MOTORPH_DB_* directly as keys in the file.
+            for (String variable : environmentVariables) {
+                value = FILE_VALUES.getProperty(variable);
                 if (!isBlank(value)) {
                     break;
                 }

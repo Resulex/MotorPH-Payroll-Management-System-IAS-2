@@ -1,0 +1,24 @@
+# MotorPH payroll system - local configuration template.
+#
+# Copy this file to config.properties and fill in the values:
+#     cp config.properties.example config.properties
+#
+# config.properties is git-ignored. Never commit real credentials.
+# Every value can also be supplied through an environment variable or a -D system
+# property instead; see the "Configuration" section of README.md.
+#
+# Do not put this file (or a filled-in copy) under src/main/resources: resources
+# are packaged into the shaded JAR.
+
+# Database (required)
+db.url=jdbc:mysql://localhost:3306/payrollsystem_db_aoop
+db.user=
+db.password=
+
+# Outgoing e-mail (optional; leave blank to disable e-mail notifications)
+mail.from=
+mail.password=
+
+# Optional SMTP overrides
+# mail.host=smtp.gmail.com
+# mail.port=587

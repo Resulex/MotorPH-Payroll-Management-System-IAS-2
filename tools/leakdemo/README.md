@@ -76,10 +76,18 @@ Environment overrides:
 | Variable | Default |
 |---|---|
 | `BEFORE_REPO` | `/Users/alexresu/OOPMotorPh_Payroll_System` |
-| `MYSQL_URL` | `jdbc:mysql://localhost:3306/payrollsystem_db_aoop` |
-| `MYSQL_USER` | `root` |
-| `MYSQL_PASS` | `Alex123!!` |
+| `MYSQL_URL` | `MOTORPH_DB_URL`, then `db.url` in `config.properties`, then `jdbc:mysql://localhost:3306/payrollsystem_db_aoop` |
+| `MYSQL_USER` | `MOTORPH_DB_USER`, then `db.user` in `config.properties`, then `root` |
+| `MYSQL_PASS` | `MOTORPH_DB_PASSWORD`, then `MYSQL_PWD`, then `db.password` in `config.properties` (**required**) |
+| `MOTORPH_CONFIG` | `config.properties` in the repository root |
 | `ITERATIONS` | `100` |
+
+No password is stored in this repository. Create a local, git-ignored file once:
+
+```bash
+cp config.properties.example config.properties
+# then set db.user and db.password
+```
 
 Output:
 

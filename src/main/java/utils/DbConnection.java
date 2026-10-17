@@ -14,25 +14,34 @@ import java.sql.SQLException;
 
 public class DbConnection {
 
+    private static Connection conn = null;
+
     public static Connection getConnection() {
-        try {
-            Connection conn = DriverManager.getConnection(
-                    AppConfig.dbUrl(), AppConfig.dbUser(), AppConfig.dbPassword());
-            System.out.println("Database connected.");
-            return conn;
-        } catch (SQLException e) {
-            throw connectionFailure(e);
-        }
+        return openConnection(false);
     }
 
     public static Connection getConnectionWithTransaction() {
+        return openConnection(true);
+    }
+
+    private static Connection openConnection(boolean transactional) {
+        // AppConfig is the single source for credentials. It also reads the
+        // MOTORPH_DB_* names and config/db.local.properties used by R-04.
+        String url = AppConfig.dbUrl();
+        String user = AppConfig.dbUser();
+        String password = AppConfig.dbPassword();
+
         try {
-            Connection conn = DriverManager.getConnection(
-                    AppConfig.dbUrl(), AppConfig.dbUser(), AppConfig.dbPassword());
-            conn.setAutoCommit(false);
-            System.out.println("Database connected with transaction.");
+            conn = DriverManager.getConnection(url, user, password);
+            if (transactional) {
+                conn.setAutoCommit(false);
+                System.out.println("Database connected with transaction.");
+            } else {
+                System.out.println("Database connected.");
+            }
             return conn;
         } catch (SQLException e) {
+            e.printStackTrace();
             throw connectionFailure(e);
         }
     }
