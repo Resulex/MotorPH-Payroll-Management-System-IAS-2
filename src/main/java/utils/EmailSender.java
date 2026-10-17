@@ -14,16 +14,19 @@ import java.util.Properties;
 
 public class EmailSender {
     private static String from = "alexmotorph.noreply@gmail.com";
-    private static String password = "nhtsxkzojzpfkgry";
+    private static String password = System.getenv("MOTORPH_EMAIL_PASSWORD");
     
     public EmailSender() {}
     
     public EmailSender(String from, String password){
-        this.from = from;
-        this.password = password;
     }
     
     public static boolean sendEmail(String to, String subject, String body) {
+        if (password == null || password.isBlank()) {
+            System.err.println("Email sending is not configured. Set MOTORPH_EMAIL_PASSWORD.");
+            return false;
+        }
+
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true");
         props.put("mail.smtp.starttls.enable", "true");

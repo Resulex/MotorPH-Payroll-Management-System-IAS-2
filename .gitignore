@@ -1,3 +1,5 @@
 /target/
 /nbproject/
 /config/db.local.properties
+/src/main/resources/Users credentials.csv
+/payrollsystem_db_aoopDump20250716.sql
